@@ -16,6 +16,7 @@ let draggedCategoryId = '';
 let withinGroupDropMode = '';
 let crossCategoryDropMode = '';
 let categoryToFocus = '';
+let elementToScrollTo = '';
 const DELETE_CONFIRM_KEY = 'mybudgeter-delete-confirm-until';
 
 const id = () => crypto.randomUUID();
@@ -24,6 +25,7 @@ const createSavePayload = (state) => ({ ...state, exportedAt: new Date().toISOSt
 function addDraftExpense(state, categoryId, group = '') {
   const expense = { id: id(), name: 'New Item', amount: 0, multiplier: 1, frequency: 'monthly', categoryId, group, sortOrder: state.expenses.length + 1 };
   state.expenses.push(expense); state.app.editingExpenseId = ''; state.app.addingExpenseCategoryId = ''; state.app.addingExpenseGroup = '';
+  return expense.id;
 }
 
 function confirmDeletion(message, onConfirm) {
@@ -193,6 +195,10 @@ function render(state) {
   if (categoryToFocus) {
     document.querySelector(`[data-category-id="${categoryToFocus}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
     categoryToFocus = '';
+  }
+  if (elementToScrollTo) {
+    document.querySelector(elementToScrollTo)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    elementToScrollTo = '';
   }
   state.categories.forEach((category) => document.querySelector(`[data-category-id="${category.id}"]`)?.style.setProperty('--accent', category.color));
 }
@@ -398,7 +404,7 @@ app?.addEventListener('click', (event) => {
   if (button.matches('[data-remove-category]')) { const categoryId = button.dataset.removeCategory; const category = currentState.categories.find((item) => item.id === categoryId); confirmDeletion(`Delete ${category?.name || 'This'} Category And All Of Its Items?`, () => { currentState.categories = currentState.categories.filter((item) => item.id !== categoryId); currentState.expenses = currentState.expenses.filter((item) => item.categoryId !== categoryId); saveState(currentState); render(currentState); }); return; }
   if (button.matches('[data-remove-expense]')) { const expenseId = button.dataset.removeExpense; confirmDeletion('Delete This Item?', () => { currentState.expenses = currentState.expenses.filter((item) => item.id !== expenseId); saveState(currentState); render(currentState); }); return; }
   if (button.matches('[data-remove-group]')) { const group = button.dataset.removeGroup; const categoryId = button.closest('[data-category-id]')?.dataset.categoryId; confirmDeletion(`Delete The ${group} Group And Its Items?`, () => { currentState.expenses = currentState.expenses.filter((item) => item.categoryId !== categoryId || item.group !== group); saveState(currentState); render(currentState); }); return; }
-  if (button.matches('[data-add-group-item]')) { addDraftExpense(currentState, button.closest('[data-category-id]')?.dataset.categoryId || '', button.dataset.addGroupItem); saveState(currentState); render(currentState); return; }
+  if (button.matches('[data-add-group-item]')) { const expenseId = addDraftExpense(currentState, button.closest('[data-category-id]')?.dataset.categoryId || '', button.dataset.addGroupItem); elementToScrollTo = `[data-expense-id="${expenseId}"]`; saveState(currentState); render(currentState); return; }
   if (button.matches('[data-rename-group]')) {
     const group = button.dataset.renameGroup;
     const categoryId = button.closest('[data-category-id]')?.dataset.categoryId;
@@ -417,7 +423,7 @@ app?.addEventListener('click', (event) => {
   if (button.matches('[data-toggle-income]')) currentState.app.isIncomeOpen = currentState.app.isIncomeOpen === false;
   else if (button.matches('[data-toggle-budget-board]')) currentState.app.isBudgetBoardOpen = currentState.app.isBudgetBoardOpen === false;
   else if (button.matches('[data-toggle-complete-summary]')) currentState.app.isCompleteSummaryOpen = currentState.app.isCompleteSummaryOpen === false;
-  else if (button.matches('[data-show-income-form]')) currentState.app.isAddingIncome = true;
+  else if (button.matches('[data-show-income-form]')) { currentState.app.isAddingIncome = true; elementToScrollTo = '#income-form'; }
   else if (button.matches('[data-cancel-income]')) currentState.app.isAddingIncome = false;
   else if (button.matches('[data-show-category-form]')) { const category = { id: id(), name: '', percentage: 0, isSavings: false, color: budget.CATEGORY_COLORS[currentState.categories.length % budget.CATEGORY_COLORS.length], sortOrder: currentState.categories.length + 1 }; currentState.categories.push(category); currentState.app.isAddingCategory = false; currentState.app.editingCategoryId = category.id; currentState.app.draftCategoryId = category.id; categoryToFocus = category.id; }
   else if (button.matches('[data-cancel-category]')) currentState.app.isAddingCategory = false;
@@ -425,7 +431,7 @@ app?.addEventListener('click', (event) => {
   else if (button.matches('[data-cancel-edit-category]')) { if (currentState.app.draftCategoryId === currentState.app.editingCategoryId) currentState.categories = currentState.categories.filter((category) => category.id !== currentState.app.draftCategoryId); currentState.app.editingCategoryId = ''; currentState.app.draftCategoryId = ''; }
   else if (button.matches('[data-edit-income]')) currentState.app.editingIncomeId = button.dataset.editIncome;
   else if (button.matches('[data-cancel-edit-income]')) currentState.app.editingIncomeId = '';
-  else if (button.matches('[data-show-expense-form]')) addDraftExpense(currentState, button.dataset.showExpenseForm);
+  else if (button.matches('[data-show-expense-form]')) { const expenseId = addDraftExpense(currentState, button.dataset.showExpenseForm); elementToScrollTo = `[data-expense-id="${expenseId}"]`; }
   else if (button.matches('[data-cancel-expense]')) { currentState.app.addingExpenseCategoryId = ''; currentState.app.addingExpenseGroup = ''; }
   else if (button.matches('[data-edit-expense]')) currentState.app.editingExpenseId = button.dataset.editExpense;
   else if (button.matches('[data-cancel-edit-expense]')) currentState.app.editingExpenseId = '';
