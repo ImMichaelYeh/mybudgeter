@@ -11,3 +11,7 @@ Key features include:
 - Automatic local browser saving, plus download and import of save files for backup.
 
 Open `index.html` in a modern browser to use the app. Your budget is stored locally in that browser; download a save file regularly for a safe backup. Importing a save file replaces the current budget.
+
+## Testing
+
+Run `node --test` to execute the budgeting logic tests.

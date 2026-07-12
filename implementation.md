@@ -94,3 +94,4 @@ This document records the intentionally implemented behavior of mybudgeter. Trea
 - `src/app-template.js` renders the base HTML for the main sections.
 - `src/main.js` manages persistence, events, dynamic UI, form labeling, collapse controls, confirmation dialogs, grouping, drag and drop, and import/export.
 - `src/style.css` contains the responsive layout, card colors, controls, and drag/drop indicators.
+- `test/budget.test.js` uses Node's built-in test runner to protect budget defaults, frequency normalization, summary calculations, category usage, and sorting behavior. Run it with `node --test`.
