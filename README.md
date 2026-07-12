@@ -1,28 +1,13 @@
 # mybudgeter
 
-TODO: add explanation of the app
+mybudgeter is a browser-based personal budgeting board. Add income sources, assign monthly budget targets to categories, and track recurring expenses or savings items at different frequencies. The board converts entries to monthly amounts so you can compare actual spending, savings, and unspent income against your budget.
 
-Todo:
-Top Buttons Section:
-- None
+Key features include:
 
-Net Income Section:
-- None
+- Income sources with notes and configurable frequency.
+- Drag-and-drop budget categories, items, and groups.
+- Expense and savings categories with monthly targets, actual percentages, and summary totals.
+- Grouped items, recurring cost quantities, and a personal notes area.
+- Automatic local browser saving, plus download and import of save files for backup.
 
-Budget Board Section:
-- When I drag an item out of a group, I want edge insertion above or below group to be supported
-- When I drag item across categories, I want edge insert
-- add edge insert within a group
-- get rid of sort by feature. Just keep manual dragging to make things easy.
-- Add Item button should add a new item to a group. Then user can press edit to change fields. Don't open add expense form fields at the top of the category.
-- Each category should show actual percentage of monthly spending. For example, I want to know how much of my net income is actually put into savings. If I put 21% into the 20% section I want to be able to see that.
-
-Complete Summary Section:
-- Instead of having Spending in Complete Summary, move it below Total Unspent as Total Spent and make it red.
-- Get rid of collapse button for Complete Summary
-
-Notes Section:
-- Add new section below complete summary that allows me to just type notes. Allow markdown formatting.
-
-Codebase:
-- Reformat all code, especially HTML, to match proper formatting for ease of editing.
+Open `index.html` in a modern browser to use the app. Your budget is stored locally in that browser; download a save file regularly for a safe backup. Importing a save file replaces the current budget.
