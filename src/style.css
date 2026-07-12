@@ -257,21 +257,18 @@ header .actions {
 .check input {
   width: auto;
 }
-.board-controls,
-.expense-toolbar {
+.board-controls {
   display: flex;
   justify-content: flex-end;
   margin: 8px 0;
 }
-.board-controls label,
-.expense-toolbar label {
+.board-controls label {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 0.85rem;
 }
-.board-controls select,
-.expense-toolbar select {
+.board-controls select {
   width: auto;
   padding: 6px 8px;
 }

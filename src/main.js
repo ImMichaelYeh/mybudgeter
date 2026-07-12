@@ -396,39 +396,6 @@ function renderNestedGroups(list, state, categoryId, formatCurrency) {
   return true;
 }
 
-function renderMarkdown(value) {
-  const escape = (text) =>
-    String(text).replace(
-      /[&<>"']/g,
-      (char) =>
-        ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;",
-        })[char],
-    );
-  const inline = (text) =>
-    escape(text)
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*([^*]+)\*/g, "<em>$1</em>");
-  return String(value || "")
-    .split(/\r?\n/)
-    .map((line) => {
-      if (/^##\s+/.test(line))
-        return `<h3>${inline(line.replace(/^##\s+/, ""))}</h3>`;
-      if (/^#\s+/.test(line))
-        return `<h2>${inline(line.replace(/^#\s+/, ""))}</h2>`;
-      if (/^[-*+]\s+/.test(line))
-        return `<div class="markdown-list">• ${inline(line.replace(/^[-*+]\s+/, ""))}</div>`;
-      if (/^\d+[.)]\s+/.test(line))
-        return `<div class="markdown-list">${inline(line)}</div>`;
-      return line ? `<p>${inline(line)}</p>` : "<br>";
-    })
-    .join("");
-}
-
 function moveItemWithinGroup(
   state,
   categoryId,
@@ -658,69 +625,20 @@ function wireEvents(state) {
   );
   const notesCard = document.createElement("section");
   notesCard.className = "card notes-card";
-  const notesView = ["text", "markdown", "preview"].includes(
-    state.app.notesView,
-  )
-    ? state.app.notesView
-    : "text";
   const notesHeading = document.createElement("div");
   notesHeading.className = "section-heading";
-  notesHeading.innerHTML = `<div><h2>Notes</h2><p class="small">${notesView === "markdown" ? "Markdown mode: use formatting syntax, then view the formatted result." : notesView === "preview" ? "Formatted Markdown preview." : "Simple text notes. Switch to Markdown mode when you need formatting."}</p></div>`;
-  const modeButton = document.createElement("button");
-  modeButton.type = "button";
-  modeButton.className = "secondary";
-  modeButton.textContent =
-    notesView === "text"
-      ? "Markdown Mode"
-      : notesView === "markdown"
-        ? "View Formatted Notes"
-        : "Edit Notes";
-  notesHeading.append(modeButton);
-  notesCard.append(notesHeading);
-  if (notesView === "preview") {
-    const preview = document.createElement("div");
-    preview.className = "markdown-preview";
-    preview.innerHTML =
-      renderMarkdown(state.notes) || '<p class="small">No notes yet.</p>';
-    notesCard.append(preview);
-  } else {
-    const editor = document.createElement("textarea");
-    editor.className = "notes-textarea";
-    editor.value = state.notes || "";
-    editor.placeholder =
-      notesView === "markdown"
-        ? "# Heading\n\n- Bullet\n\n**Bold** and *italic*"
-        : "Write your notes here…";
-    notesCard.append(editor);
-    editor.addEventListener("input", () => {
-      state.notes = editor.value;
-      saveState(state);
-    });
-  }
-  app?.append(notesCard);
-  modeButton.addEventListener("click", () => {
-    state.app.notesView =
-      notesView === "text"
-        ? "markdown"
-        : notesView === "markdown"
-          ? "preview"
-          : "text";
-    saveState(state);
-    render(state);
-  });
-  const simpleNotesHeading = document.createElement("div");
-  simpleNotesHeading.className = "section-heading";
-  simpleNotesHeading.innerHTML =
+  notesHeading.innerHTML =
     '<div><h2>Notes</h2><p class="small">Personal notes are saved with your budget.</p></div>';
-  const simpleNotesEditor = document.createElement("textarea");
-  simpleNotesEditor.className = "notes-textarea";
-  simpleNotesEditor.value = state.notes || "";
-  simpleNotesEditor.placeholder = "Write your notes here";
-  simpleNotesEditor.addEventListener("input", () => {
-    state.notes = simpleNotesEditor.value;
+  const notesEditor = document.createElement("textarea");
+  notesEditor.className = "notes-textarea";
+  notesEditor.value = state.notes || "";
+  notesEditor.placeholder = "Write your notes here";
+  notesEditor.addEventListener("input", () => {
+    state.notes = notesEditor.value;
     saveState(state);
   });
-  notesCard.replaceChildren(simpleNotesHeading, simpleNotesEditor);
+  notesCard.append(notesHeading, notesEditor);
+  app?.append(notesCard);
   const saveActions = document.querySelector("header .actions");
   if (saveActions) {
     const help = document.createElement("p");
@@ -765,9 +683,6 @@ function wireEvents(state) {
     if (heading)
       heading.textContent = `Budget ${category.percentage}% · Actual ${(summary.monthlyIncome ? (category.monthlySpent / summary.monthlyIncome) * 100 : 0).toFixed(1)}% · ${category.isSavings ? "Savings" : "Expenses"}`;
   });
-  document
-    .querySelectorAll(".expense-toolbar")
-    .forEach((toolbar) => toolbar.remove());
   const addCategoryButton = document.querySelector("[data-show-category-form]");
   const board = document.querySelector(".board");
   if (board && addCategoryButton) board.append(addCategoryButton);
@@ -1020,9 +935,6 @@ function wireEvents(state) {
     if (detail)
       detail.textContent = `${formatCurrency(expense.amount)} × ${expense.multiplier} = ${formatCurrency(expense.amount * expense.multiplier)} · ${expense.frequency}`;
   });
-  document
-    .querySelectorAll("[data-duplicate-expense]")
-    .forEach((button) => button.remove());
   if (state.app.addingExpenseGroup)
     document.querySelector(".expense-form")?.elements.group &&
       (document.querySelector(".expense-form").elements.group.value =
@@ -1170,15 +1082,6 @@ function wireEvents(state) {
         event.target.value = "";
       }
     });
-  document.querySelectorAll("[data-expense-sort]").forEach((select) =>
-    select.addEventListener("change", (event) => {
-      state.app.expenseSorts ||= {};
-      state.app.expenseSorts[event.target.dataset.expenseSort] =
-        event.target.value;
-      saveState(state);
-      render(state);
-    }),
-  );
 }
 
 app?.addEventListener("click", (event) => {
@@ -1346,9 +1249,6 @@ app?.addEventListener("click", (event) => {
   else if (button.matches("[data-toggle-budget-board]"))
     currentState.app.isBudgetBoardOpen =
       currentState.app.isBudgetBoardOpen === false;
-  else if (button.matches("[data-toggle-complete-summary]"))
-    currentState.app.isCompleteSummaryOpen =
-      currentState.app.isCompleteSummaryOpen === false;
   else if (button.matches("[data-show-income-form]")) {
     currentState.app.isAddingIncome = true;
     elementToScrollTo = "#income-form";
@@ -1399,18 +1299,7 @@ app?.addEventListener("click", (event) => {
     currentState.app.editingExpenseId = button.dataset.editExpense;
   else if (button.matches("[data-cancel-edit-expense]"))
     currentState.app.editingExpenseId = "";
-  else if (button.matches("[data-duplicate-expense]")) {
-    const original = currentState.expenses.find(
-      (item) => item.id === button.dataset.duplicateExpense,
-    );
-    if (original)
-      currentState.expenses.push({
-        ...original,
-        id: id(),
-        name: `${original.name} copy`,
-        sortOrder: currentState.expenses.length + 1,
-      });
-  } else if (button.matches("[data-remove-income]"))
+  else if (button.matches("[data-remove-income]"))
     currentState.incomes = currentState.incomes.filter(
       (item) => item.id !== button.dataset.removeIncome,
     );

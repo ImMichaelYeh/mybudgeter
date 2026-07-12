@@ -66,8 +66,6 @@ function createEmptyState() {
       categoryMessage: "",
       isIncomeOpen: true,
       isBudgetBoardOpen: true,
-      isCompleteSummaryOpen: true,
-      notesView: "text",
       isAddingIncome: false,
       isAddingCategory: false,
       editingCategoryId: "",

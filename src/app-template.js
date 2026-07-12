@@ -13,6 +13,14 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
         })[character],
     );
   const frequencyOptions = window.budget.FREQUENCY_OPTIONS;
+  const accentColors = [
+    "#2563eb",
+    "#7c3aed",
+    "#059669",
+    "#ea580c",
+    "#dc2626",
+    "#0891b2",
+  ];
   const periods = [
     ["weekly", "Weekly"],
     ["biweekly", "Biweekly"],
@@ -98,13 +106,9 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
           : usage >= 60
             ? "warn"
             : "good";
-      const expenseSort =
-        state.app.expenseSorts?.[category.id] ||
-        state.app.expenseSort ||
-        "manual";
       const items = window.budget.sortExpenses(
         allExpenses.filter((item) => item.categoryId === category.id),
-        expenseSort,
+        "manual",
       );
       const list = items
         .map((item) => {
@@ -138,7 +142,6 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
               </div>
               <div class="actions">
                 <button class="ghost small-button" data-edit-expense="${item.id}">Edit</button>
-                <button class="ghost small-button" data-duplicate-expense="${item.id}">Copy</button>
                 <button class="ghost small-button" data-remove-expense="${item.id}">&times;</button>
               </div>
             </div>
@@ -146,14 +149,6 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
         })
         .join("");
 
-      const accentColors = [
-        "#2563eb",
-        "#7c3aed",
-        "#059669",
-        "#ea580c",
-        "#dc2626",
-        "#0891b2",
-      ];
       return `
         <article
           class="category-column"
@@ -182,19 +177,6 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
               ? addItemForm(category)
               : `<button type="button" class="expense-add-button" data-show-expense-form="${category.id}">${category.isSavings ? "Add savings" : "Add expense"}</button>`
           }
-          <div class="expense-toolbar">
-            <label>
-              Sort
-              <select data-expense-sort="${category.id}">
-                ${["manual", "amount", "name", "frequency", "group"]
-                  .map(
-                    (value) =>
-                      `<option value="${value}" ${expenseSort === value ? "selected" : ""}>${value[0].toUpperCase() + value.slice(1)}</option>`,
-                  )
-                  .join("")}
-              </select>
-            </label>
-          </div>
           <div class="expense-list">${list || '<div class="empty-item">No items yet.</div>'}</div>
         </article>
       `;
