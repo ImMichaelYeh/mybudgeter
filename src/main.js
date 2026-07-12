@@ -18,6 +18,7 @@ let crossCategoryDropMode = "";
 let categoryToFocus = "";
 let elementToScrollTo = "";
 const DELETE_CONFIRM_KEY = "mybudgeter-delete-confirm-until";
+const GROUP_PATH_SEPARATOR = budget.GROUP_SEPARATOR;
 
 const id = () => crypto.randomUUID();
 const createSavePayload = (state) => ({
@@ -260,6 +261,139 @@ function nextGroupName(state, categoryId) {
   let name = "New Group";
   while (groups.has(name)) name = `New Group ${++index}`;
   return name;
+}
+
+function nextSubgroupName(state, categoryId, parentGroup) {
+  const groups = new Set(
+    state.expenses
+      .filter((expense) => expense.categoryId === categoryId)
+      .map((expense) => expense.group)
+      .filter(Boolean),
+  );
+  let index = 1;
+  let name = `${parentGroup}${GROUP_PATH_SEPARATOR}New Subgroup`;
+  while (groups.has(name))
+    name = `${parentGroup}${GROUP_PATH_SEPARATOR}New Subgroup ${++index}`;
+  return name;
+}
+
+function renderNestedGroups(list, state, categoryId, formatCurrency) {
+  const groupedItems = [...list.children].map((item) => ({
+    item,
+    expense: state.expenses.find(
+      (expense) =>
+        expense.id === (item.dataset.expenseId || item.dataset.editExpenseForm),
+    ),
+  }));
+  if (
+    !groupedItems.some(({ expense }) =>
+      expense?.group?.includes(GROUP_PATH_SEPARATOR),
+    )
+  )
+    return false;
+
+  const root = { entries: [], children: new Map() };
+  const addPath = (path) => {
+    let parent = root;
+    let fullPath = "";
+    budget.splitGroupPath(path).forEach((name) => {
+      fullPath = fullPath ? `${fullPath}${GROUP_PATH_SEPARATOR}${name}` : name;
+      let group = parent.children.get(name);
+      if (!group) {
+        group = { name, path: fullPath, entries: [], children: new Map() };
+        parent.children.set(name, group);
+        parent.entries.push(group);
+      }
+      parent = group;
+    });
+    return parent;
+  };
+
+  groupedItems.forEach(({ item, expense }) => {
+    if (!expense?.group?.trim()) root.entries.push(item);
+    else addPath(expense.group).entries.push(item);
+  });
+
+  const renderGroup = (group) => {
+    const groupKey = `${categoryId}:${group.path}`;
+    const isCollapsed = state.app.collapsedGroups?.[groupKey] === true;
+    const monthlyTotal = state.expenses
+      .filter(
+        (expense) =>
+          expense.categoryId === categoryId &&
+          budget.isGroupOrDescendant(expense.group?.trim(), group.path),
+      )
+      .reduce(
+        (total, expense) =>
+          total +
+          budget.normalizeToMonthly(
+            expense.amount * expense.multiplier,
+            expense.frequency,
+            state.app.paychecksPerMonth,
+          ),
+        0,
+      );
+    const container = document.createElement("section");
+    container.className = `item-group${isCollapsed ? " collapsed" : ""}`;
+    container.draggable = group.entries.some((entry) => entry.nodeType === 1);
+    container.dataset.groupName = group.path;
+
+    const header = document.createElement("div");
+    header.className = "item-group-header";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "ghost small-button group-toggle";
+    toggle.dataset.toggleGroup = group.path;
+    toggle.title = isCollapsed ? "Expand Group" : "Collapse Group";
+    toggle.setAttribute("aria-label", toggle.title);
+    toggle.innerHTML = isCollapsed
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>';
+    const heading = document.createElement("h4");
+    heading.textContent = group.name;
+    const total = document.createElement("strong");
+    total.className = "group-total";
+    total.textContent = `${formatCurrency(monthlyTotal)} / Month`;
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.className = "ghost small-button";
+    rename.dataset.renameGroup = group.path;
+    rename.textContent = "Edit";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "ghost small-button";
+    remove.dataset.removeGroup = group.path;
+    remove.textContent = "×";
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.append(rename, remove);
+    header.append(toggle, heading, total, actions);
+
+    const items = document.createElement("div");
+    items.className = "item-group-items";
+    group.entries.forEach((entry) =>
+      items.append(entry.nodeType === 1 ? entry : renderGroup(entry)),
+    );
+    const addSubgroup = document.createElement("button");
+    addSubgroup.type = "button";
+    addSubgroup.className = "expense-add-button group-add-button";
+    addSubgroup.dataset.addSubgroup = group.path;
+    addSubgroup.textContent = "+ Add Subgroup";
+    const addItem = document.createElement("button");
+    addItem.type = "button";
+    addItem.className = "expense-add-button group-add-button";
+    addItem.dataset.addGroupItem = group.path;
+    addItem.textContent = "+ Add Item";
+    container.append(header, items, addSubgroup, addItem);
+    return container;
+  };
+
+  list.replaceChildren(
+    ...root.entries.map((entry) =>
+      entry.nodeType === 1 ? entry : renderGroup(entry),
+    ),
+  );
+  return true;
 }
 
 function renderMarkdown(value) {
@@ -596,9 +730,19 @@ function wireEvents(state) {
   }
   const categoryMeta = document.querySelector(".category-form-meta");
   if (categoryMeta) {
-    const overage = budget.getCategoryPercentageTotal(state) - 100;
-    categoryMeta.hidden = overage <= 0;
+    const categoryTotal = budget.getCategoryPercentageTotal(state);
+    const categorizedTotal = summary.monthlyExpenses + summary.monthlySavings;
+    const categorizedPercent = summary.monthlyIncome
+      ? (categorizedTotal / summary.monthlyIncome) * 100
+      : 0;
+    const overage = categoryTotal - 100;
+    categoryMeta.hidden = false;
     categoryMeta.replaceChildren();
+    const budgetTotal = document.createElement("span");
+    budgetTotal.textContent = `Categories Total: ${categoryTotal.toFixed(1)}%`;
+    const categorized = document.createElement("span");
+    categorized.textContent = `Categorized: ${categorizedPercent.toFixed(1)}%`;
+    categoryMeta.append(budgetTotal, categorized);
     if (overage > 0) {
       const warning = document.createElement("span");
       warning.className = "message";
@@ -628,6 +772,7 @@ function wireEvents(state) {
   if (board && addCategoryButton) board.append(addCategoryButton);
   document.querySelectorAll(".expense-list").forEach((list) => {
     const categoryId = list.closest("[data-category-id]")?.dataset.categoryId;
+    if (renderNestedGroups(list, state, categoryId, formatCurrency)) return;
     const groups = new Map();
     const nodes = [];
     [...list.children].forEach((item) => {
@@ -700,7 +845,12 @@ function wireEvents(state) {
         actions.className = "actions";
         actions.append(rename, remove);
         header.append(toggle, heading, total, actions);
-        container.append(header, items, add);
+        const addSubgroup = document.createElement("button");
+        addSubgroup.type = "button";
+        addSubgroup.className = "expense-add-button group-add-button";
+        addSubgroup.dataset.addSubgroup = group;
+        addSubgroup.textContent = "+ Add Subgroup";
+        container.append(header, items, addSubgroup, add);
         groups.set(group, container);
         nodes.push(container);
       }
@@ -1086,7 +1236,9 @@ app?.addEventListener("click", (event) => {
     const categoryId = button.closest("[data-category-id]")?.dataset.categoryId;
     confirmDeletion(`Delete The ${group} Group And Its Items?`, () => {
       currentState.expenses = currentState.expenses.filter(
-        (item) => item.categoryId !== categoryId || item.group !== group,
+        (item) =>
+          item.categoryId !== categoryId ||
+          !budget.isGroupOrDescendant(item.group, group),
       );
       saveState(currentState);
       render(currentState);
@@ -1104,6 +1256,20 @@ app?.addEventListener("click", (event) => {
     render(currentState);
     return;
   }
+  if (button.matches("[data-add-subgroup]")) {
+    const categoryId =
+      button.closest("[data-category-id]")?.dataset.categoryId || "";
+    const subgroup = nextSubgroupName(
+      currentState,
+      categoryId,
+      button.dataset.addSubgroup,
+    );
+    const expenseId = addDraftExpense(currentState, categoryId, subgroup);
+    elementToScrollTo = `[data-expense-id="${expenseId}"]`;
+    saveState(currentState);
+    render(currentState);
+    return;
+  }
   if (button.matches("[data-rename-group]")) {
     const group = button.dataset.renameGroup;
     const categoryId = button.closest("[data-category-id]")?.dataset.categoryId;
@@ -1115,7 +1281,7 @@ app?.addEventListener("click", (event) => {
     label.className = "input-label";
     label.textContent = "Group Name";
     const input = document.createElement("input");
-    input.value = group;
+    input.value = budget.splitGroupPath(group).at(-1) || group;
     input.required = true;
     label.append(input);
     const actions = document.createElement("div");
@@ -1131,18 +1297,28 @@ app?.addEventListener("click", (event) => {
     form.append(label, actions);
     form.addEventListener("submit", (submitEvent) => {
       submitEvent.preventDefault();
-      const nextGroup = input.value.trim();
-      if (!nextGroup) return;
+      const nextName = input.value.trim();
+      if (!nextName) return;
+      const parentPath = group.includes(GROUP_PATH_SEPARATOR)
+        ? `${group.slice(0, group.lastIndexOf(GROUP_PATH_SEPARATOR))}${GROUP_PATH_SEPARATOR}`
+        : "";
+      const nextGroup = `${parentPath}${nextName}`;
       currentState.expenses.forEach((expense) => {
-        if (expense.categoryId === categoryId && expense.group === group)
-          expense.group = nextGroup;
+        if (
+          expense.categoryId === categoryId &&
+          budget.isGroupOrDescendant(expense.group, group)
+        )
+          expense.group = `${nextGroup}${expense.group.slice(group.length)}`;
       });
       const oldKey = `${categoryId}:${group}`;
       const newKey = `${categoryId}:${nextGroup}`;
-      if (currentState.app.collapsedGroups?.[oldKey]) {
-        currentState.app.collapsedGroups[newKey] = true;
-        delete currentState.app.collapsedGroups[oldKey];
-      }
+      Object.keys(currentState.app.collapsedGroups || {}).forEach((key) => {
+        if (!key.startsWith(oldKey)) return;
+        currentState.app.collapsedGroups[
+          `${newKey}${key.slice(oldKey.length)}`
+        ] = currentState.app.collapsedGroups[key];
+        delete currentState.app.collapsedGroups[key];
+      });
       saveState(currentState);
       render(currentState);
     });
@@ -1807,13 +1983,15 @@ app?.addEventListener("drop", (event) => {
       (item) => item.id === target.dataset.expenseId,
     );
     if (targetCategoryId && targetCategoryId !== sourceGroupCategoryId) {
-      currentState.expenses.forEach((item) => {
-        if (
-          item.categoryId === sourceGroupCategoryId &&
-          item.group === sourceGroup
+      if (
+        !budget.moveGroupToCategory(
+          currentState,
+          sourceGroupCategoryId,
+          sourceGroup,
+          targetCategoryId,
         )
-          item.categoryId = targetCategoryId;
-      });
+      )
+        return;
       const moved = destinationGroup
         ? moveGroupBesideGroup(
             currentState,
@@ -1870,21 +2048,43 @@ app?.addEventListener("drop", (event) => {
     )?.dataset.categoryId;
     if (!categoryId) return;
     if (categoryId !== sourceGroupCategoryId) {
+      const movedIntoGroup =
+        destinationGroup &&
+        nextCrossCategoryDropMode !== "before" &&
+        nextCrossCategoryDropMode !== "after" &&
+        budget.moveGroupIntoGroup(
+          currentState,
+          sourceGroupCategoryId,
+          sourceGroup,
+          categoryId,
+          destinationGroup.dataset.groupName,
+        );
       let sortOrder = Math.max(
         0,
         ...currentState.expenses
           .filter((item) => item.categoryId === categoryId)
           .map((item) => item.sortOrder || 0),
       );
-      currentState.expenses.forEach((item) => {
+      if (!movedIntoGroup) {
         if (
-          item.categoryId === sourceGroupCategoryId &&
-          item.group === sourceGroup
-        ) {
-          item.categoryId = categoryId;
-          item.sortOrder = ++sortOrder;
-        }
-      });
+          !budget.moveGroupToCategory(
+            currentState,
+            sourceGroupCategoryId,
+            sourceGroup,
+            categoryId,
+          )
+        )
+          return;
+        currentState.expenses
+          .filter(
+            (item) =>
+              item.categoryId === categoryId &&
+              budget.isGroupOrDescendant(item.group, sourceGroup),
+          )
+          .forEach((item) => {
+            item.sortOrder = ++sortOrder;
+          });
+      }
       if (
         nextCrossCategoryDropMode === "before" ||
         nextCrossCategoryDropMode === "after"
@@ -1926,11 +2126,16 @@ app?.addEventListener("drop", (event) => {
           )
         )
           return;
-      } else
-        currentState.expenses.forEach((item) => {
-          if (item.categoryId === categoryId && item.group === sourceGroup)
-            item.group = destinationGroup.dataset.groupName;
-        });
+      } else if (
+        !budget.moveGroupIntoGroup(
+          currentState,
+          sourceGroupCategoryId,
+          sourceGroup,
+          categoryId,
+          destinationGroup.dataset.groupName,
+        )
+      )
+        return;
       currentState.app.expenseSorts ||= {};
       currentState.app.expenseSorts[categoryId] = "manual";
     } else if (target.dataset.expenseId) {

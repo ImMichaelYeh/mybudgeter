@@ -550,6 +550,10 @@ button.secondary {
   width: calc(100% - 16px);
   margin: 8px;
 }
+.item-group .item-group {
+  margin: 8px;
+  border-color: rgba(255, 255, 255, 0.5);
+}
 .delete-dialog-backdrop {
   position: fixed;
   z-index: 10;
@@ -681,7 +685,7 @@ button.secondary {
   content: "Create Group";
 }
 .item-group.group-combine-target::after {
-  content: "Merge Groups";
+  content: "Make Subgroup";
 }
 .expense-item.item-group-combine-target::after {
   content: "Add To Group";

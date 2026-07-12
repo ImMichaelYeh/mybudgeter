@@ -281,8 +281,8 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
     <section class="card">
       <div class="section-heading"><div><h2>Budget board</h2></div>${categoryForm}</div>
       <div class="category-form-meta">
-        <span>Used: ${categoryTotal.toFixed(1)}%</span>
-        <span>${categoryTotal > 100 ? `Over: ${(categoryTotal - 100).toFixed(1)}%` : `Remaining: ${(100 - categoryTotal).toFixed(1)}%`}</span>
+        <span>Categories Total: ${categoryTotal.toFixed(1)}%</span>
+        <span>Categorized: ${(summary.monthlyIncome ? ((summary.monthlyExpenses + summary.monthlySavings) / summary.monthlyIncome) * 100 : 0).toFixed(1)}%</span>
       </div>
       <div class="board-controls">
         <label>

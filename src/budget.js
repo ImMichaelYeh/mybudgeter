@@ -8,6 +8,7 @@ const FREQUENCY_OPTIONS = [
 ];
 
 const DEFAULT_PAYCHECKS_PER_MONTH = 2;
+const GROUP_SEPARATOR = " / ";
 const CATEGORY_COLORS = [
   "#2563eb",
   "#7c3aed",
@@ -86,6 +87,74 @@ function createEmptyState() {
 
 function createSeedState() {
   return createEmptyState();
+}
+
+function splitGroupPath(group) {
+  return String(group || "")
+    .split(GROUP_SEPARATOR)
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+function isGroupOrDescendant(group, ancestor) {
+  return (
+    group === ancestor || group?.startsWith(`${ancestor}${GROUP_SEPARATOR}`)
+  );
+}
+
+function moveGroupIntoGroup(
+  state,
+  sourceCategoryId,
+  sourceGroup,
+  destinationCategoryId,
+  destinationGroup,
+) {
+  if (
+    !sourceGroup ||
+    !destinationGroup ||
+    (sourceCategoryId === destinationCategoryId &&
+      (isGroupOrDescendant(destinationGroup, sourceGroup) ||
+        isGroupOrDescendant(sourceGroup, destinationGroup)))
+  )
+    return false;
+
+  const sourceItems = state.expenses.filter(
+    (expense) =>
+      expense.categoryId === sourceCategoryId &&
+      isGroupOrDescendant(expense.group, sourceGroup),
+  );
+  if (!sourceItems.length) return false;
+
+  const nestedGroup = `${destinationGroup}${GROUP_SEPARATOR}${sourceGroup}`;
+  sourceItems.forEach((expense) => {
+    expense.group = `${nestedGroup}${expense.group.slice(sourceGroup.length)}`;
+    expense.categoryId = destinationCategoryId;
+  });
+  return true;
+}
+
+function moveGroupToCategory(
+  state,
+  sourceCategoryId,
+  sourceGroup,
+  destinationCategoryId,
+) {
+  const sourceItems = state.expenses.filter(
+    (expense) =>
+      expense.categoryId === sourceCategoryId &&
+      isGroupOrDescendant(expense.group, sourceGroup),
+  );
+  if (
+    !sourceGroup ||
+    sourceCategoryId === destinationCategoryId ||
+    !sourceItems.length
+  )
+    return false;
+
+  sourceItems.forEach((expense) => {
+    expense.categoryId = destinationCategoryId;
+  });
+  return true;
 }
 
 function normalizeToMonthly(
@@ -295,8 +364,13 @@ function sortExpenses(expenses, sort = "manual") {
 window.budget = {
   FREQUENCY_OPTIONS,
   CATEGORY_COLORS,
+  GROUP_SEPARATOR,
   createEmptyState,
   createSeedState,
+  splitGroupPath,
+  isGroupOrDescendant,
+  moveGroupIntoGroup,
+  moveGroupToCategory,
   normalizeToMonthly,
   toPeriodAmount,
   getBudgetSummary,

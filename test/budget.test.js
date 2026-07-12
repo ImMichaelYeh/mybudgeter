@@ -44,6 +44,7 @@ test("default state has the intended categories and savings setup", () => {
     ],
   );
   assert.equal(state.app.paychecksPerMonth, 2);
+  assert.equal(budget.getCategoryPercentageTotal(state), 100);
   assert.ok(budget.FREQUENCY_OPTIONS.some(({ value }) => value === "biweekly"));
   assert.ok(
     !budget.FREQUENCY_OPTIONS.some(({ value }) => value === "per-paycheck"),
@@ -58,6 +59,84 @@ test("normalizes income and recurring costs to monthly and period amounts", () =
   assertClose(budget.normalizeToMonthly(1200, "annually"), 100);
   assertClose(budget.toPeriodAmount(100, "monthly", "annual"), 1200);
   assertClose(budget.toPeriodAmount(1200, "annually", "monthly"), 100);
+});
+
+test("group paths support nested subgroups without matching similarly named groups", () => {
+  const budget = loadBudget();
+
+  assert.deepEqual(plain(budget.splitGroupPath("Home / Utilities / Power")), [
+    "Home",
+    "Utilities",
+    "Power",
+  ]);
+  assert.equal(budget.isGroupOrDescendant("Home / Utilities", "Home"), true);
+  assert.equal(budget.isGroupOrDescendant("Home", "Home"), true);
+  assert.equal(budget.isGroupOrDescendant("Home Office", "Home"), false);
+});
+
+test("dropping a group on another group nests its full subtree", () => {
+  const budget = loadBudget();
+  const state = {
+    expenses: [
+      { id: "1", categoryId: "needs", group: "Home", sortOrder: 1 },
+      { id: "2", categoryId: "needs", group: "Home / Utilities", sortOrder: 2 },
+      { id: "3", categoryId: "needs", group: "Travel", sortOrder: 3 },
+    ],
+  };
+
+  assert.equal(
+    budget.moveGroupIntoGroup(state, "needs", "Home", "needs", "Travel"),
+    true,
+  );
+  assert.deepEqual(plain(state.expenses.map(({ group }) => group)), [
+    "Travel / Home",
+    "Travel / Home / Utilities",
+    "Travel",
+  ]);
+  assert.equal(
+    budget.moveGroupIntoGroup(
+      state,
+      "needs",
+      "Travel",
+      "needs",
+      "Travel / Home",
+    ),
+    false,
+  );
+});
+
+test("moving a group to another category transfers its full subtree", () => {
+  const budget = loadBudget();
+  const state = {
+    expenses: [
+      { id: "1", categoryId: "needs", group: "Home" },
+      { id: "2", categoryId: "needs", group: "Home / Utilities" },
+      { id: "3", categoryId: "needs", group: "Travel" },
+    ],
+  };
+
+  assert.equal(
+    budget.moveGroupToCategory(state, "needs", "Home", "wants"),
+    true,
+  );
+  assert.deepEqual(plain(state.expenses.map(({ categoryId }) => categoryId)), [
+    "wants",
+    "wants",
+    "needs",
+  ]);
+});
+
+test("browser scripts have no conflicting top-level declarations", () => {
+  const budgetSource = fs.readFileSync(
+    path.join(__dirname, "../src/budget.js"),
+    "utf8",
+  );
+  const mainSource = fs.readFileSync(
+    path.join(__dirname, "../src/main.js"),
+    "utf8",
+  );
+
+  assert.doesNotThrow(() => new vm.Script(`${budgetSource}\n${mainSource}`));
 });
 
 test("summary separates expenses, savings, unspent money, and category usage", () => {

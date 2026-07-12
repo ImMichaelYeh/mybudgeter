@@ -42,7 +42,7 @@ This document records the intentionally implemented behavior of mybudgeter. Trea
 - Saving a category requires both a name and a Budget Percentage greater than zero. Missing requirements are highlighted in red with a visible error message.
 - If the name is exactly Savings, ignoring letter case, the Savings Category checkbox automatically turns on until the user changes that checkbox themselves.
 - The default 20% Savings category is marked as a savings category.
-- The board does not show a Used/Remaining target counter. It only shows a warning when category targets exceed 100%.
+- The board shows Categories Total (the sum of category budget percentages) and Categorized (the actual monthly expenses plus savings as a percentage of monthly net income). It does not show a Used/Remaining target counter, and only adds a warning when category targets exceed 100%.
 - Category headers show budget percentage, actual percentage of monthly net income represented by the category’s items, and whether the category is Savings or Expenses.
 - The category progress bar displays the actual amount used relative to its category target; the percentage label is based on items currently entered.
 - Categories have a wide, separate drag grip above their name. They can be manually reordered with center and edge drag targets. Dropping in the center swaps categories; dropping on the left or right edge inserts between categories.
@@ -60,15 +60,15 @@ This document records the intentionally implemented behavior of mybudgeter. Trea
 
 ## Groups and item organization
 
-- Items with the same group name in a category are rendered together as one group card.
+- Items with the same group name in a category are rendered together as one group card. Groups can contain subgroups at any depth; their saved group path uses `Parent / Child` notation.
 - A group header has a visual drag grip, an icon-based expand/collapse control to the left of its name, the group’s normalized monthly total, Edit, and Delete controls.
 - A collapsed group shows only its identity and monthly total.
-- Editing a group name renames every item in that group. Editing an individual item’s group changes only that item, allowing it to leave or enter a group.
-- The group add action is placed at the bottom of the group and adds a new member to that group.
+- Editing a group name renames every item in that group and all of its subgroups. Editing an individual item’s group changes only that item, allowing it to leave or enter a group.
+- The group actions at the bottom include Add Item and Add Subgroup. Add Subgroup creates a nested group with a new editable item; deleting a parent group removes all of its descendants.
 - Groups and individual items can be reordered manually. Groups can be moved alongside regular items, including above or below them.
-- Groups and items can move between categories.
+- Groups and items can move between categories. Moving a group transfers the entire group tree, including all subgroups and items, so no copy remains in the original category.
 - Edge indicators show the exact insertion location above or below categories, groups, normal items, and group members.
-- Dropping an item on a normal item or a group combines it into a group (creating a new group when necessary). Edge drops retain edge insertion behavior.
+- Dropping an item on a normal item or a group combines it into a group (creating a new group when necessary). Dropping a group on another group makes the moved group, including its descendants, a subgroup rather than merging both groups. Edge drops retain edge insertion behavior.
 - Dragging an item out of a group clears its group tag. When moving it out, edge insertion before or after a group remains available and is visually indicated.
 - Dropping an item into a group assigns that group. Normal items can also be inserted above or below group members without changing the group.
 - The board intentionally has no item sort-by filter; manual dragging is the organizational method.
