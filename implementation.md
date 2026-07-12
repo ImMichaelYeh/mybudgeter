@@ -46,6 +46,7 @@ This document records the intentionally implemented behavior of mybudgeter. Trea
 - Category headers show budget percentage, actual percentage of monthly net income represented by the category’s items, and whether the category is Savings or Expenses.
 - The category progress bar displays the actual amount used relative to its category target; the percentage label is based on items currently entered.
 - Categories have a wide, separate drag grip above their name. They can be manually reordered with center and edge drag targets. Dropping in the center swaps categories; dropping on the left or right edge inserts between categories.
+- Category order is always the custom manual order; there is no category sort control.
 
 ## Expenses, savings, quantities, and frequencies
 

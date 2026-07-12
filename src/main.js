@@ -508,6 +508,7 @@ function normalizeState(value) {
       ...base.app,
       ...(value.app || {}),
       isAddingCategory: false,
+      categorySort: "manual",
       expenseSort: "manual",
       expenseSorts: {},
     },
@@ -1168,13 +1169,6 @@ function wireEvents(state) {
       } finally {
         event.target.value = "";
       }
-    });
-  document
-    .querySelector("[data-category-sort]")
-    ?.addEventListener("change", (event) => {
-      state.app.categorySort = event.target.value;
-      saveState(state);
-      render(state);
     });
   document.querySelectorAll("[data-expense-sort]").forEach((select) =>
     select.addEventListener("change", (event) => {
@@ -2040,7 +2034,6 @@ app?.addEventListener("drop", (event) => {
       )
     )
       return;
-    currentState.app.categorySort = "manual";
   } else if (type === "group") {
     const destinationGroup = target.closest("[data-group-name]");
     const categoryId = (destinationGroup || target).closest(

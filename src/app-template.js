@@ -284,16 +284,6 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
         <span>Categories Total: ${categoryTotal.toFixed(1)}%</span>
         <span>Categorized: ${(summary.monthlyIncome ? ((summary.monthlyExpenses + summary.monthlySavings) / summary.monthlyIncome) * 100 : 0).toFixed(1)}%</span>
       </div>
-      <div class="board-controls">
-        <label>
-          Category order
-          <select data-category-sort>
-            <option value="manual">Custom</option>
-            <option value="percentage" ${state.app.categorySort === "percentage" ? "selected" : ""}>Percentage</option>
-            <option value="name" ${state.app.categorySort === "name" ? "selected" : ""}>Name</option>
-          </select>
-        </label>
-      </div>
       <div class="board">${board || '<div class="empty-state">No categories yet.</div>'}</div>
     </section>
 

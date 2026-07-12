@@ -182,8 +182,6 @@ test("category and item sorting follows the selected rule without changing input
     { id: "one", name: "Zoo", percentage: 10, sortOrder: 2 },
     { id: "two", name: "Alpha", percentage: 50, sortOrder: 1 },
   ];
-  state.app.categorySort = "manual";
-
   assert.deepEqual(plain(budget.sortCategories(state).map(({ id }) => id)), [
     "two",
     "one",

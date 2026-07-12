@@ -60,7 +60,6 @@ function createEmptyState() {
     exportedAt: new Date().toISOString(),
     app: {
       paychecksPerMonth: DEFAULT_PAYCHECKS_PER_MONTH,
-      categorySort: "percentage",
       expenseSort: "manual",
       expenseSorts: {},
       collapsedGroups: {},
@@ -334,13 +333,7 @@ function getCategoryPercentageTotal(state) {
 
 function sortCategories(state) {
   const sorted = [...state.categories];
-  sorted.sort((a, b) =>
-    state.app.categorySort === "name"
-      ? a.name.localeCompare(b.name)
-      : state.app.categorySort === "manual"
-        ? (a.sortOrder || 0) - (b.sortOrder || 0)
-        : b.percentage - a.percentage || a.name.localeCompare(b.name),
-  );
+  sorted.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
   return sorted;
 }
 
