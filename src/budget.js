@@ -16,8 +16,8 @@ const DEFAULT_CATEGORIES = [
 function createEmptyState() {
   return {
     version: 1, schema: 'mybudgeter-budget-v1', exportedAt: new Date().toISOString(),
-    app: { paychecksPerMonth: DEFAULT_PAYCHECKS_PER_MONTH, categorySort: 'percentage', expenseSort: 'manual', expenseSorts: {}, collapsedGroups: {}, categoryMessage: '', isIncomeOpen: true, isBudgetBoardOpen: true, isCompleteSummaryOpen: true, isAddingIncome: false, isAddingCategory: false, editingCategoryId: '', draftCategoryId: '', editingIncomeId: '', addingExpenseCategoryId: '', addingExpenseGroup: '', editingExpenseId: '' },
-    incomes: [], categories: DEFAULT_CATEGORIES.map((category) => ({ ...category })), expenses: [],
+    app: { paychecksPerMonth: DEFAULT_PAYCHECKS_PER_MONTH, categorySort: 'percentage', expenseSort: 'manual', expenseSorts: {}, collapsedGroups: {}, categoryMessage: '', isIncomeOpen: true, isBudgetBoardOpen: true, isCompleteSummaryOpen: true, notesView: 'text', isAddingIncome: false, isAddingCategory: false, editingCategoryId: '', draftCategoryId: '', editingIncomeId: '', addingExpenseCategoryId: '', addingExpenseGroup: '', editingExpenseId: '' },
+    incomes: [], categories: DEFAULT_CATEGORIES.map((category) => ({ ...category })), expenses: [], notes: '',
   };
 }
 

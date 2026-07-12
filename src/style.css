@@ -12,6 +12,7 @@ button, input, select, textarea { font: inherit; }
 h1, h2, h3, button, .button-like { text-transform: capitalize; }
 
 #app { width: 100%; max-width: none; margin: 0 auto; padding: clamp(16px, 2vw, 32px); }
+.app-footer { padding: 8px 0 0; color: #64748b; font-size: .9rem; text-align: center; }
 
 header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
 header h1 { margin: 0 0 6px; }
@@ -28,6 +29,8 @@ header h1 { margin: 0 0 6px; }
 .summary-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; font-size: 0.95rem; }
 .summary-row strong { font-weight: 700; }
 .summary-row.total-unspent { margin-top: 4px; padding-top: 8px; border-top: 1px solid #cbd5e1; color: #0f766e; }
+.summary-row.total-spent { color: #b91c1c; }
+.notes-textarea { min-height: 220px; }
 
 form { display: grid; gap: 10px; }
 .input-label { display: grid; gap: 4px; color: inherit; font-size: .82rem; font-weight: 700; }

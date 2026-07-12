@@ -13,11 +13,18 @@ let itemDropMode = '';
 let groupItemDropMode = '';
 let categoryDropMode = '';
 let draggedCategoryId = '';
+let withinGroupDropMode = '';
+let crossCategoryDropMode = '';
 let categoryToFocus = '';
 const DELETE_CONFIRM_KEY = 'mybudgeter-delete-confirm-until';
 
 const id = () => crypto.randomUUID();
 const createSavePayload = (state) => ({ ...state, exportedAt: new Date().toISOString() });
+
+function addDraftExpense(state, categoryId, group = '') {
+  const expense = { id: id(), name: 'New Item', amount: 0, multiplier: 1, frequency: 'monthly', categoryId, group, sortOrder: state.expenses.length + 1 };
+  state.expenses.push(expense); state.app.editingExpenseId = ''; state.app.addingExpenseCategoryId = ''; state.app.addingExpenseGroup = '';
+}
 
 function confirmDeletion(message, onConfirm) {
   if (Number(sessionStorage.getItem(DELETE_CONFIRM_KEY)) > Date.now()) { onConfirm(); return; }
@@ -110,6 +117,31 @@ function nextGroupName(state, categoryId) {
   return name;
 }
 
+function renderMarkdown(value) {
+  const escape = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  const inline = (text) => escape(text).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  return String(value || '').split(/\r?\n/).map((line) => {
+    if (/^##\s+/.test(line)) return `<h3>${inline(line.replace(/^##\s+/, ''))}</h3>`;
+    if (/^#\s+/.test(line)) return `<h2>${inline(line.replace(/^#\s+/, ''))}</h2>`;
+    if (/^[-*+]\s+/.test(line)) return `<div class="markdown-list">• ${inline(line.replace(/^[-*+]\s+/, ''))}</div>`;
+    if (/^\d+[.)]\s+/.test(line)) return `<div class="markdown-list">${inline(line)}</div>`;
+    return line ? `<p>${inline(line)}</p>` : '<br>';
+  }).join('');
+}
+
+function moveItemWithinGroup(state, categoryId, group, sourceId, targetId, placement) {
+  const items = budget.sortExpenses(state.expenses.filter((expense) => expense.categoryId === categoryId && expense.group === group), 'manual');
+  const sourceIndex = items.findIndex((item) => item.id === sourceId);
+  const targetIndex = items.findIndex((item) => item.id === targetId);
+  if (sourceIndex < 0 || targetIndex < 0) return false;
+  const slots = items.map((item) => item.sortOrder);
+  const [source] = items.splice(sourceIndex, 1);
+  const destinationIndex = items.findIndex((item) => item.id === targetId);
+  items.splice(placement === 'before' ? destinationIndex : destinationIndex + 1, 0, source);
+  items.forEach((item, index) => { item.sortOrder = slots[index]; });
+  return true;
+}
+
 function moveCategory(state, sourceId, targetId, placement) {
   const categories = [...state.categories].sort((a, b) => a.sortOrder - b.sortOrder);
   const sourceIndex = categories.findIndex((category) => category.id === sourceId);
@@ -130,7 +162,7 @@ function downloadSaveFile(state) {
 function normalizeState(value) {
   const base = budget.createEmptyState();
   if (!value || value.schema !== base.schema) throw new Error('Unsupported save file');
-  return { ...base, ...value, app: { ...base.app, ...(value.app || {}), isAddingCategory: false }, incomes: Array.isArray(value.incomes) ? value.incomes : [], categories: (Array.isArray(value.categories) ? value.categories : base.categories).map((item, index) => ({ ...item, sortOrder: item.sortOrder || index + 1, isSavings: Boolean(item.isSavings) || item.id === 'default-savings', color: item.color || budget.CATEGORY_COLORS[index % budget.CATEGORY_COLORS.length] })), expenses: (Array.isArray(value.expenses) ? value.expenses : []).map((item, index) => ({ ...item, amount: Number(item.amount) || 0, multiplier: Math.max(0.01, Number(item.multiplier) || 1), sortOrder: item.sortOrder || index + 1, group: item.group || '' })) };
+  return { ...base, ...value, app: { ...base.app, ...(value.app || {}), isAddingCategory: false, expenseSort: 'manual', expenseSorts: {} }, incomes: Array.isArray(value.incomes) ? value.incomes : [], categories: (Array.isArray(value.categories) ? value.categories : base.categories).map((item, index) => ({ ...item, sortOrder: item.sortOrder || index + 1, isSavings: Boolean(item.isSavings) || item.id === 'default-savings', color: item.color || budget.CATEGORY_COLORS[index % budget.CATEGORY_COLORS.length] })), expenses: (Array.isArray(value.expenses) ? value.expenses : []).map((item, index) => ({ ...item, amount: Number(item.amount) || 0, multiplier: Math.max(0.01, Number(item.multiplier) || 1), sortOrder: item.sortOrder || index + 1, group: item.group || '' })) };
 }
 
 function loadState() {
@@ -154,6 +186,10 @@ function render(state) {
   currentState = state;
   app.innerHTML = window.renderApp(state, budget.getBudgetSummary(state), budget.sortCategories(state), budget.sortExpenses(state.expenses, state.app.expenseSort));
   wireEvents(state);
+  const footer = document.createElement('footer');
+  footer.className = 'app-footer';
+  footer.innerHTML = `Michael Yeh <span aria-hidden="true">&copy;</span> ${new Date().getFullYear()}`;
+  app.append(footer);
   if (categoryToFocus) {
     document.querySelector(`[data-category-id="${categoryToFocus}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
     categoryToFocus = '';
@@ -188,7 +224,19 @@ function wireEvents(state) {
     [...card.children].forEach((child) => { if (child !== heading && child !== compact) child.hidden = !isOpen; });
   };
   makeCollapsible(cards[1], state.app.isBudgetBoardOpen !== false, 'toggleBudgetBoard', `${state.categories.length} Categories · Monthly Spending ${formatCurrency(summary.monthlyExpenses)} · Monthly Savings ${formatCurrency(summary.monthlySavings)}`);
-  makeCollapsible(cards[2], state.app.isCompleteSummaryOpen !== false, 'toggleCompleteSummary', `Monthly Income ${formatCurrency(summary.monthlyIncome)} · Spending ${formatCurrency(summary.monthlyExpenses)} · Savings ${formatCurrency(summary.monthlySavings)} · Total Unspent ${formatCurrency(summary.monthlySavings + summary.monthlyRemaining)}`);
+  const notesCard = document.createElement('section'); notesCard.className = 'card notes-card';
+  const notesView = ['text', 'markdown', 'preview'].includes(state.app.notesView) ? state.app.notesView : 'text';
+  const notesHeading = document.createElement('div'); notesHeading.className = 'section-heading'; notesHeading.innerHTML = `<div><h2>Notes</h2><p class="small">${notesView === 'markdown' ? 'Markdown mode: use formatting syntax, then view the formatted result.' : notesView === 'preview' ? 'Formatted Markdown preview.' : 'Simple text notes. Switch to Markdown mode when you need formatting.'}</p></div>`;
+  const modeButton = document.createElement('button'); modeButton.type = 'button'; modeButton.className = 'secondary'; modeButton.textContent = notesView === 'text' ? 'Markdown Mode' : notesView === 'markdown' ? 'View Formatted Notes' : 'Edit Notes'; notesHeading.append(modeButton);
+  notesCard.append(notesHeading);
+  if (notesView === 'preview') { const preview = document.createElement('div'); preview.className = 'markdown-preview'; preview.innerHTML = renderMarkdown(state.notes) || '<p class="small">No notes yet.</p>'; notesCard.append(preview); }
+  else { const editor = document.createElement('textarea'); editor.className = 'notes-textarea'; editor.value = state.notes || ''; editor.placeholder = notesView === 'markdown' ? '# Heading\n\n- Bullet\n\n**Bold** and *italic*' : 'Write your notes here…'; notesCard.append(editor); editor.addEventListener('input', () => { state.notes = editor.value; saveState(state); }); }
+  app?.append(notesCard);
+  modeButton.addEventListener('click', () => { state.app.notesView = notesView === 'text' ? 'markdown' : notesView === 'markdown' ? 'preview' : 'text'; saveState(state); render(state); });
+  const simpleNotesHeading = document.createElement('div'); simpleNotesHeading.className = 'section-heading'; simpleNotesHeading.innerHTML = '<div><h2>Notes</h2><p class="small">Personal notes are saved with your budget.</p></div>';
+  const simpleNotesEditor = document.createElement('textarea'); simpleNotesEditor.className = 'notes-textarea'; simpleNotesEditor.value = state.notes || ''; simpleNotesEditor.placeholder = 'Write your notes here';
+  simpleNotesEditor.addEventListener('input', () => { state.notes = simpleNotesEditor.value; saveState(state); });
+  notesCard.replaceChildren(simpleNotesHeading, simpleNotesEditor);
   const saveActions = document.querySelector('header .actions');
   if (saveActions) {
     const help = document.createElement('p');
@@ -208,19 +256,18 @@ function wireEvents(state) {
       categoryMeta.append(warning);
     }
   }
-  budget.getBudgetSummary(state).categories.forEach((category) => {
-    const progress = document.querySelector(`[data-category-id="${category.id}"] .progress-bar`);
+  summary.categories.forEach((category) => {
+    const column = document.querySelector(`[data-category-id="${category.id}"]`);
+    const progress = column?.querySelector('.progress-bar');
     if (!progress) return;
     const label = document.createElement('strong');
     label.className = 'progress-label';
     label.textContent = `${category.usagePercent.toFixed(1)}%`;
     progress.append(label);
+    const heading = column.querySelector('.column-header p');
+    if (heading) heading.textContent = `Budget ${category.percentage}% · Actual ${(summary.monthlyIncome ? category.monthlySpent / summary.monthlyIncome * 100 : 0).toFixed(1)}% · ${category.isSavings ? 'Savings' : 'Expenses'}`;
   });
-  document.querySelectorAll('.expense-toolbar label').forEach((label) => {
-    const text = [...label.childNodes].find((node) => node.nodeType === Node.TEXT_NODE);
-    if (text) text.textContent = 'Sort By';
-  });
-  document.querySelectorAll('[data-expense-sort] option[value="group"]').forEach((option) => option.remove());
+  document.querySelectorAll('.expense-toolbar').forEach((toolbar) => toolbar.remove());
   const addCategoryButton = document.querySelector('[data-show-category-form]');
   const board = document.querySelector('.board');
   if (board && addCategoryButton) board.append(addCategoryButton);
@@ -351,7 +398,7 @@ app?.addEventListener('click', (event) => {
   if (button.matches('[data-remove-category]')) { const categoryId = button.dataset.removeCategory; const category = currentState.categories.find((item) => item.id === categoryId); confirmDeletion(`Delete ${category?.name || 'This'} Category And All Of Its Items?`, () => { currentState.categories = currentState.categories.filter((item) => item.id !== categoryId); currentState.expenses = currentState.expenses.filter((item) => item.categoryId !== categoryId); saveState(currentState); render(currentState); }); return; }
   if (button.matches('[data-remove-expense]')) { const expenseId = button.dataset.removeExpense; confirmDeletion('Delete This Item?', () => { currentState.expenses = currentState.expenses.filter((item) => item.id !== expenseId); saveState(currentState); render(currentState); }); return; }
   if (button.matches('[data-remove-group]')) { const group = button.dataset.removeGroup; const categoryId = button.closest('[data-category-id]')?.dataset.categoryId; confirmDeletion(`Delete The ${group} Group And Its Items?`, () => { currentState.expenses = currentState.expenses.filter((item) => item.categoryId !== categoryId || item.group !== group); saveState(currentState); render(currentState); }); return; }
-  if (button.matches('[data-add-group-item]')) { currentState.app.addingExpenseCategoryId = button.closest('[data-category-id]')?.dataset.categoryId || ''; currentState.app.addingExpenseGroup = button.dataset.addGroupItem; saveState(currentState); render(currentState); return; }
+  if (button.matches('[data-add-group-item]')) { addDraftExpense(currentState, button.closest('[data-category-id]')?.dataset.categoryId || '', button.dataset.addGroupItem); saveState(currentState); render(currentState); return; }
   if (button.matches('[data-rename-group]')) {
     const group = button.dataset.renameGroup;
     const categoryId = button.closest('[data-category-id]')?.dataset.categoryId;
@@ -378,7 +425,7 @@ app?.addEventListener('click', (event) => {
   else if (button.matches('[data-cancel-edit-category]')) { if (currentState.app.draftCategoryId === currentState.app.editingCategoryId) currentState.categories = currentState.categories.filter((category) => category.id !== currentState.app.draftCategoryId); currentState.app.editingCategoryId = ''; currentState.app.draftCategoryId = ''; }
   else if (button.matches('[data-edit-income]')) currentState.app.editingIncomeId = button.dataset.editIncome;
   else if (button.matches('[data-cancel-edit-income]')) currentState.app.editingIncomeId = '';
-  else if (button.matches('[data-show-expense-form]')) { currentState.app.addingExpenseCategoryId = button.dataset.showExpenseForm; currentState.app.addingExpenseGroup = ''; }
+  else if (button.matches('[data-show-expense-form]')) addDraftExpense(currentState, button.dataset.showExpenseForm);
   else if (button.matches('[data-cancel-expense]')) { currentState.app.addingExpenseCategoryId = ''; currentState.app.addingExpenseGroup = ''; }
   else if (button.matches('[data-edit-expense]')) currentState.app.editingExpenseId = button.dataset.editExpense;
   else if (button.matches('[data-cancel-edit-expense]')) currentState.app.editingExpenseId = '';
@@ -413,41 +460,51 @@ app?.addEventListener('dragover', (event) => {
   const item = event.target.closest('[data-expense-id]');
   const group = event.target.closest('[data-group-name]');
   if (draggedType === 'category' && category && category.dataset.categoryId !== draggedCategoryId) { event.preventDefault(); const rect = category.getBoundingClientRect(); const position = (event.clientX - rect.left) / rect.width; categoryDropMode = position < .25 ? 'before' : position > .75 ? 'after' : 'swap'; document.querySelectorAll('.category-drop-before, .category-drop-after, .category-swap-target').forEach((target) => target.classList.remove('category-drop-before', 'category-drop-after', 'category-swap-target')); category.classList.add(categoryDropMode === 'swap' ? 'category-swap-target' : `category-drop-${categoryDropMode}`); return; }
-  if (draggedType === 'group' && category && category.dataset.categoryId !== draggedGroupCategoryId) { event.preventDefault(); document.querySelectorAll('.category-transfer-target').forEach((target) => target.classList.remove('category-transfer-target')); category.classList.add('category-transfer-target'); return; }
+  if (draggedType === 'group' && category && category.dataset.categoryId !== draggedGroupCategoryId) { event.preventDefault(); crossCategoryDropMode = ''; const dropTarget = group || item; if (dropTarget) { const rect = dropTarget.getBoundingClientRect(); const position = (event.clientY - rect.top) / rect.height; crossCategoryDropMode = position < .25 ? 'before' : position > .75 ? 'after' : 'into'; document.querySelectorAll('.item-drop-before, .item-drop-after, .group-drop-before, .group-drop-after, .category-transfer-target').forEach((target) => target.classList.remove('item-drop-before', 'item-drop-after', 'group-drop-before', 'group-drop-after', 'category-transfer-target')); if (crossCategoryDropMode === 'before' || crossCategoryDropMode === 'after') dropTarget.classList.add(group ? `item-drop-${crossCategoryDropMode}` : `group-drop-${crossCategoryDropMode}`); else category.classList.add('category-transfer-target'); } else { document.querySelectorAll('.category-transfer-target').forEach((target) => target.classList.remove('category-transfer-target')); category.classList.add('category-transfer-target'); } return; }
   if (draggedType === 'group' && ((group && group.dataset.groupName !== draggedGroupName) || (!group && item))) { event.preventDefault(); groupItemDropMode = ''; document.querySelectorAll('.group-drop-target, .group-combine-target, .item-group-combine-target, .item-drop-target, .group-drop-before, .group-drop-after, .item-drop-before, .item-drop-after').forEach((target) => target.classList.remove('group-drop-target', 'group-combine-target', 'item-group-combine-target', 'item-drop-target', 'group-drop-before', 'group-drop-after', 'item-drop-before', 'item-drop-after')); if (group) { const position = (event.clientY - group.getBoundingClientRect().top) / group.getBoundingClientRect().height; if (position < .25) { groupItemDropMode = 'before'; group.classList.add('item-drop-before'); } else if (position > .75) { groupItemDropMode = 'after'; group.classList.add('item-drop-after'); } else { groupItemDropMode = 'combine'; group.classList.add('group-combine-target'); } } else { const rect = item.getBoundingClientRect(); const position = (event.clientY - rect.top) / rect.height; if (position < .25) { groupItemDropMode = 'before'; item.classList.add('group-drop-before'); } else if (position > .75) { groupItemDropMode = 'after'; item.classList.add('group-drop-after'); } else { groupItemDropMode = 'combine'; item.classList.add('item-group-combine-target'); } } return; }
   if (draggedType !== 'expense' || (!item && !category)) return;
   event.preventDefault();
   const source = currentState.expenses.find((expense) => expense.id === draggedExpenseId);
-  if (source && category && category.dataset.categoryId !== source.categoryId) { document.querySelectorAll('.category-transfer-target').forEach((target) => target.classList.remove('category-transfer-target')); category.classList.add('category-transfer-target'); return; }
+  if (source && category && category.dataset.categoryId !== source.categoryId) { crossCategoryDropMode = ''; const dropTarget = group || item; if (dropTarget) { const rect = dropTarget.getBoundingClientRect(); const position = (event.clientY - rect.top) / rect.height; crossCategoryDropMode = position < .25 ? 'before' : position > .75 ? 'after' : 'into'; document.querySelectorAll('.item-drop-before, .item-drop-after, .group-drop-before, .group-drop-after, .category-transfer-target').forEach((target) => target.classList.remove('item-drop-before', 'item-drop-after', 'group-drop-before', 'group-drop-after', 'category-transfer-target')); if (crossCategoryDropMode === 'before' || crossCategoryDropMode === 'after') dropTarget.classList.add(group ? `item-drop-${crossCategoryDropMode}` : `group-drop-${crossCategoryDropMode}`); else category.classList.add('category-transfer-target'); } else { document.querySelectorAll('.category-transfer-target').forEach((target) => target.classList.remove('category-transfer-target')); category.classList.add('category-transfer-target'); } return; }
   const destination = currentState.expenses.find((expense) => expense.id === item?.dataset.expenseId);
-  itemGroupDropMode = ''; itemDropMode = '';
+  itemGroupDropMode = ''; itemDropMode = ''; withinGroupDropMode = '';
   document.querySelectorAll('.item-drop-target, .item-swap-target, .item-combine-target, .group-drop-target, .item-drop-before, .item-drop-after').forEach((target) => target.classList.remove('item-drop-target', 'item-swap-target', 'item-combine-target', 'group-drop-target', 'item-drop-before', 'item-drop-after'));
-  if (source && group && group.closest('[data-category-id]')?.dataset.categoryId === source.categoryId && source.group !== group.dataset.groupName) {
+  if (source && destination && source.group && source.group === destination.group && source.categoryId === destination.categoryId && source.id !== destination.id) {
+    const rect = item.getBoundingClientRect(); withinGroupDropMode = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'; item.classList.add(`item-drop-${withinGroupDropMode}`);
+  }
+  else if (source && group && group.closest('[data-category-id]')?.dataset.categoryId === source.categoryId) {
     const position = (event.clientY - group.getBoundingClientRect().top) / group.getBoundingClientRect().height;
-    if (!source.group && position < .25) { itemGroupDropMode = 'before'; group.classList.add('item-drop-before'); }
-    else if (!source.group && position > .75) { itemGroupDropMode = 'after'; group.classList.add('item-drop-after'); }
-    else { itemGroupDropMode = 'into'; group.classList.add('group-drop-target'); }
+    if (position < .25) { itemGroupDropMode = 'before'; group.classList.add('item-drop-before'); }
+    else if (position > .75) { itemGroupDropMode = 'after'; group.classList.add('item-drop-after'); }
+    else if (source.group !== group.dataset.groupName) { itemGroupDropMode = 'into'; group.classList.add('group-drop-target'); }
   }
   else if (source && destination && !source.group && !destination.group && source.categoryId === destination.categoryId && source.id !== destination.id) {
     const rect = item.getBoundingClientRect(); const x = (event.clientX - rect.left) / rect.width; const y = (event.clientY - rect.top) / rect.height; itemDropMode = x < .2 || y < .25 ? 'before' : x > .8 || y > .75 ? 'after' : 'combine'; item.classList.add(itemDropMode === 'combine' ? 'item-combine-target' : `item-drop-${itemDropMode}`);
   }
-  else if (source?.group && destination && destination.categoryId === source.categoryId && !destination.group && destination.id !== source.id) item.classList.add('ungroup-drop-target');
+  else if (source?.group && destination && destination.categoryId === source.categoryId && !destination.group && destination.id !== source.id) {
+    const rect = item.getBoundingClientRect(); const x = (event.clientX - rect.left) / rect.width; const y = (event.clientY - rect.top) / rect.height; itemDropMode = x < .2 || y < .25 ? 'before' : x > .8 || y > .75 ? 'after' : 'combine'; item.classList.add(itemDropMode === 'combine' ? 'item-combine-target' : `item-drop-${itemDropMode}`);
+  }
   else if (source?.group && category?.dataset.categoryId === source.categoryId && !event.target.closest('.item-group')) (event.target.closest('.expense-list') || category.querySelector('.expense-list'))?.classList.add('ungroup-drop-target');
   else if (item && item.dataset.expenseId !== draggedExpenseId) item.classList.add('item-drop-target');
 });
 
 app?.addEventListener('dragleave', (event) => { const category = event.target.closest('[data-category-id]'); if (category && !category.contains(event.relatedTarget)) category.classList.remove('drop-target'); });
-app?.addEventListener('dragend', () => { draggedType = ''; draggedExpenseId = ''; draggedGroupName = ''; draggedGroupCategoryId = ''; itemGroupDropMode = ''; itemDropMode = ''; groupItemDropMode = ''; categoryDropMode = ''; draggedCategoryId = ''; clearDropTargets(); });
+app?.addEventListener('dragend', () => { draggedType = ''; draggedExpenseId = ''; draggedGroupName = ''; draggedGroupCategoryId = ''; itemGroupDropMode = ''; itemDropMode = ''; withinGroupDropMode = ''; groupItemDropMode = ''; crossCategoryDropMode = ''; categoryDropMode = ''; draggedCategoryId = ''; clearDropTargets(); });
 
 app?.addEventListener('drop', (event) => {
   const target = event.target.closest('[data-group-name], [data-category-id], [data-expense-id]');
   const sourceGroup = draggedGroupName; const sourceGroupCategoryId = draggedGroupCategoryId;
-  const groupDropMode = itemGroupDropMode; const nextItemDropMode = itemDropMode; const nextGroupItemDropMode = groupItemDropMode; const nextCategoryDropMode = categoryDropMode;
-  clearDropTargets(); draggedType = ''; draggedExpenseId = ''; draggedGroupName = ''; draggedGroupCategoryId = ''; itemGroupDropMode = ''; itemDropMode = ''; groupItemDropMode = ''; categoryDropMode = ''; draggedCategoryId = '';
+  const groupDropMode = itemGroupDropMode; const nextItemDropMode = itemDropMode; const nextWithinGroupDropMode = withinGroupDropMode; const nextGroupItemDropMode = groupItemDropMode; const nextCrossCategoryDropMode = crossCategoryDropMode; const nextCategoryDropMode = categoryDropMode;
+  clearDropTargets(); draggedType = ''; draggedExpenseId = ''; draggedGroupName = ''; draggedGroupCategoryId = ''; itemGroupDropMode = ''; itemDropMode = ''; withinGroupDropMode = ''; groupItemDropMode = ''; crossCategoryDropMode = ''; categoryDropMode = ''; draggedCategoryId = '';
   const value = event.dataTransfer.getData('text/plain'); if (!target || !value) return; event.preventDefault();
   const [type, sourceId] = value.split(':');
+  if (type === 'expense' && nextWithinGroupDropMode && target.dataset.expenseId) { const source = currentState.expenses.find((item) => item.id === sourceId); const destination = currentState.expenses.find((item) => item.id === target.dataset.expenseId); if (source && destination && source.group && source.group === destination.group && source.categoryId === destination.categoryId && moveItemWithinGroup(currentState, source.categoryId, source.group, source.id, destination.id, nextWithinGroupDropMode)) { currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[source.categoryId] = 'manual'; saveState(currentState); render(currentState); return; } }
+  if (type === 'expense' && nextItemDropMode && target.dataset.expenseId) { const source = currentState.expenses.find((item) => item.id === sourceId); const destination = currentState.expenses.find((item) => item.id === target.dataset.expenseId); if (source?.group && destination && !destination.group && source.categoryId === destination.categoryId) { if (nextItemDropMode === 'before' || nextItemDropMode === 'after') { source.group = ''; if (!moveItemBesideItem(currentState, source.categoryId, source.id, destination.id, nextItemDropMode)) return; } else if (nextItemDropMode === 'combine') { const group = nextGroupName(currentState, source.categoryId); source.group = group; destination.group = group; } else return; currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[source.categoryId] = 'manual'; saveState(currentState); render(currentState); return; } }
+  if (type === 'expense' && (groupDropMode === 'before' || groupDropMode === 'after')) { const source = currentState.expenses.find((item) => item.id === sourceId); const destinationGroup = target.closest('[data-group-name]')?.dataset.groupName; const targetCategoryId = target.dataset.categoryId || target.closest('[data-category-id]')?.dataset.categoryId; if (source && source.categoryId === targetCategoryId && destinationGroup) { source.group = ''; if (moveItemBesideGroup(currentState, source.categoryId, source.id, destinationGroup, groupDropMode)) { currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[source.categoryId] = 'manual'; saveState(currentState); render(currentState); return; } } }
+  if (type === 'expense' && (nextCrossCategoryDropMode === 'before' || nextCrossCategoryDropMode === 'after')) { const source = currentState.expenses.find((item) => item.id === sourceId); const destinationGroup = target.closest('[data-group-name]')?.dataset.groupName; const targetCategoryId = target.dataset.categoryId || target.closest('[data-category-id]')?.dataset.categoryId; const destination = currentState.expenses.find((item) => item.id === target.dataset.expenseId); if (source && targetCategoryId && source.categoryId !== targetCategoryId) { const sourceCategoryId = source.categoryId; source.categoryId = targetCategoryId; source.group = ''; const moved = destinationGroup ? moveItemBesideGroup(currentState, targetCategoryId, source.id, destinationGroup, nextCrossCategoryDropMode) : destination ? moveItemBesideItem(currentState, targetCategoryId, source.id, destination.id, nextCrossCategoryDropMode) : false; if (moved) { currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[sourceCategoryId] = 'manual'; currentState.app.expenseSorts[targetCategoryId] = 'manual'; saveState(currentState); render(currentState); return; } } }
+  if (type === 'group' && (nextCrossCategoryDropMode === 'before' || nextCrossCategoryDropMode === 'after')) { const destinationGroup = target.closest('[data-group-name]'); const targetCategoryId = (destinationGroup || target).closest('[data-category-id]')?.dataset.categoryId; const destination = currentState.expenses.find((item) => item.id === target.dataset.expenseId); if (targetCategoryId && targetCategoryId !== sourceGroupCategoryId) { currentState.expenses.forEach((item) => { if (item.categoryId === sourceGroupCategoryId && item.group === sourceGroup) item.categoryId = targetCategoryId; }); const moved = destinationGroup ? moveGroupBesideGroup(currentState, targetCategoryId, sourceGroup, destinationGroup.dataset.groupName, nextCrossCategoryDropMode) : destination ? moveGroupBesideItem(currentState, targetCategoryId, sourceGroup, destination.id, nextCrossCategoryDropMode) : false; if (moved) { currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[sourceGroupCategoryId] = 'manual'; currentState.app.expenseSorts[targetCategoryId] = 'manual'; saveState(currentState); render(currentState); return; } } }
   if (type === 'category' && target.dataset.categoryId !== sourceId) { if (nextCategoryDropMode === 'swap') { const source = currentState.categories.find((item) => item.id === sourceId); const destination = currentState.categories.find((item) => item.id === target.dataset.categoryId); if (!source || !destination) return; const order = source.sortOrder; source.sortOrder = destination.sortOrder; destination.sortOrder = order; } else if (!moveCategory(currentState, sourceId, target.dataset.categoryId, nextCategoryDropMode || 'after')) return; currentState.app.categorySort = 'manual'; }
-  else if (type === 'group') { const destinationGroup = target.closest('[data-group-name]'); const categoryId = (destinationGroup || target).closest('[data-category-id]')?.dataset.categoryId; if (!categoryId) return; if (categoryId !== sourceGroupCategoryId) { let sortOrder = Math.max(0, ...currentState.expenses.filter((item) => item.categoryId === categoryId).map((item) => item.sortOrder || 0)); currentState.expenses.forEach((item) => { if (item.categoryId === sourceGroupCategoryId && item.group === sourceGroup) { item.categoryId = categoryId; item.sortOrder = ++sortOrder; } }); currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[sourceGroupCategoryId] = 'manual'; currentState.app.expenseSorts[categoryId] = 'manual'; } else if (destinationGroup) { if (nextGroupItemDropMode === 'before' || nextGroupItemDropMode === 'after') { if (!moveGroupBesideGroup(currentState, categoryId, sourceGroup, destinationGroup.dataset.groupName, nextGroupItemDropMode)) return; } else currentState.expenses.forEach((item) => { if (item.categoryId === categoryId && item.group === sourceGroup) item.group = destinationGroup.dataset.groupName; }); currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[categoryId] = 'manual'; } else if (target.dataset.expenseId) { if (nextGroupItemDropMode === 'before' || nextGroupItemDropMode === 'after') { if (!moveGroupBesideItem(currentState, categoryId, sourceGroup, target.dataset.expenseId, nextGroupItemDropMode)) return; } else { const destination = currentState.expenses.find((item) => item.id === target.dataset.expenseId); if (!destination) return; destination.group = sourceGroup; } currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[categoryId] = 'manual'; } else return; }
+  else if (type === 'group') { const destinationGroup = target.closest('[data-group-name]'); const categoryId = (destinationGroup || target).closest('[data-category-id]')?.dataset.categoryId; if (!categoryId) return; if (categoryId !== sourceGroupCategoryId) { let sortOrder = Math.max(0, ...currentState.expenses.filter((item) => item.categoryId === categoryId).map((item) => item.sortOrder || 0)); currentState.expenses.forEach((item) => { if (item.categoryId === sourceGroupCategoryId && item.group === sourceGroup) { item.categoryId = categoryId; item.sortOrder = ++sortOrder; } }); if (nextCrossCategoryDropMode === 'before' || nextCrossCategoryDropMode === 'after') { const moved = destinationGroup ? moveGroupBesideGroup(currentState, categoryId, sourceGroup, destinationGroup.dataset.groupName, nextCrossCategoryDropMode) : target.dataset.expenseId ? moveGroupBesideItem(currentState, categoryId, sourceGroup, target.dataset.expenseId, nextCrossCategoryDropMode) : false; if (!moved) return; } currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[sourceGroupCategoryId] = 'manual'; currentState.app.expenseSorts[categoryId] = 'manual'; } else if (destinationGroup) { if (nextGroupItemDropMode === 'before' || nextGroupItemDropMode === 'after') { if (!moveGroupBesideGroup(currentState, categoryId, sourceGroup, destinationGroup.dataset.groupName, nextGroupItemDropMode)) return; } else currentState.expenses.forEach((item) => { if (item.categoryId === categoryId && item.group === sourceGroup) item.group = destinationGroup.dataset.groupName; }); currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[categoryId] = 'manual'; } else if (target.dataset.expenseId) { if (nextGroupItemDropMode === 'before' || nextGroupItemDropMode === 'after') { if (!moveGroupBesideItem(currentState, categoryId, sourceGroup, target.dataset.expenseId, nextGroupItemDropMode)) return; } else { const destination = currentState.expenses.find((item) => item.id === target.dataset.expenseId); if (!destination) return; destination.group = sourceGroup; } currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[categoryId] = 'manual'; } else return; }
   else if (type === 'expense') { const source = currentState.expenses.find((item) => item.id === sourceId); const destination = currentState.expenses.find((item) => item.id === target.dataset.expenseId); const destinationGroup = target.closest('[data-group-name]')?.dataset.groupName; const targetCategoryId = target.dataset.categoryId || target.closest('[data-category-id]')?.dataset.categoryId; if (!source || target.dataset.expenseId === sourceId || !targetCategoryId) return; if (source.categoryId !== targetCategoryId) { const sourceCategoryId = source.categoryId; source.categoryId = targetCategoryId; source.sortOrder = Math.max(0, ...currentState.expenses.filter((item) => item.categoryId === targetCategoryId && item.id !== source.id).map((item) => item.sortOrder || 0)) + 1; if (destinationGroup) source.group = destinationGroup; currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[sourceCategoryId] = 'manual'; currentState.app.expenseSorts[targetCategoryId] = 'manual'; } else if (destination && nextItemDropMode === 'combine' && !source.group && !destination.group && source.categoryId === destination.categoryId) { const group = nextGroupName(currentState, source.categoryId); source.group = group; destination.group = group; currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[source.categoryId] = 'manual'; } else if (destination && (nextItemDropMode === 'before' || nextItemDropMode === 'after') && !source.group && !destination.group && source.categoryId === destination.categoryId) { if (!moveItemBesideItem(currentState, source.categoryId, source.id, destination.id, nextItemDropMode)) return; currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[source.categoryId] = 'manual'; } else if (destinationGroup && groupDropMode && groupDropMode !== 'into' && !source.group && source.categoryId === targetCategoryId) { if (!moveItemBesideGroup(currentState, source.categoryId, source.id, destinationGroup, groupDropMode)) return; currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[source.categoryId] = 'manual'; } else if (destinationGroup && source.categoryId === targetCategoryId && source.group !== destinationGroup) { source.group = destinationGroup; if (destination) { const order = source.sortOrder; source.sortOrder = destination.sortOrder; destination.sortOrder = order; } else source.sortOrder = Math.max(...currentState.expenses.filter((item) => item.categoryId === source.categoryId).map((item) => item.sortOrder || 0)) + 1; currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[source.categoryId] = 'manual'; } else if (destination) { const order = source.sortOrder; source.sortOrder = destination.sortOrder; destination.sortOrder = order; if (source.categoryId === destination.categoryId && source.group && !destination.group) source.group = ''; currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[source.categoryId] = 'manual'; currentState.app.expenseSorts[destination.categoryId] = 'manual'; } else if (source.group && source.categoryId === targetCategoryId && !target.closest('.item-group')) { source.group = ''; currentState.app.expenseSorts ||= {}; currentState.app.expenseSorts[source.categoryId] = 'manual'; } else return; }
   else return;
   saveState(currentState); render(currentState);
