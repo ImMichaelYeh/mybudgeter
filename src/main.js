@@ -466,7 +466,10 @@ function downloadSaveFile(state) {
 
 function normalizeState(value) {
   const base = budget.createEmptyState();
-  if (!value || value.schema !== base.schema)
+  if (
+    !value ||
+    String(value.schema).toLowerCase() !== base.schema.toLowerCase()
+  )
     throw new Error("Unsupported save file");
   return {
     ...base,
