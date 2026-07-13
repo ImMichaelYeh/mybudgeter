@@ -93,19 +93,6 @@ button,
   letter-spacing: -0.03em;
   text-decoration: none;
 }
-.portfolio-link {
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 0.85rem;
-  font-weight: 800;
-  letter-spacing: 0.11em;
-  text-decoration: none;
-  text-transform: uppercase;
-}
-.portfolio-link:hover,
-.portfolio-link:focus {
-  color: var(--gold);
-}
-
 .card {
   width: min(var(--content-width), 100%);
   margin-right: auto;
