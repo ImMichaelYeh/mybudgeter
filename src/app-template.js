@@ -172,12 +172,14 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
             <div><span>Remaining</span><strong>${money(detail?.monthlyRemaining)}</strong></div>
           </div>
           <div class="progress-bar ${progressColor}"><span style="width:${Math.min(100, usage)}%"></span></div>
-          ${
-            state.app.addingExpenseCategoryId === category.id
-              ? addItemForm(category)
-              : `<button type="button" class="expense-add-button" data-show-expense-form="${category.id}">${category.isSavings ? "Add savings" : "Add expense"}</button>`
-          }
-          <div class="expense-list">${list || '<div class="empty-item">No items yet.</div>'}</div>
+          <div class="expense-list">
+            ${list || '<div class="empty-item">No items yet.</div>'}
+            ${
+              state.app.addingExpenseCategoryId === category.id
+                ? addItemForm(category)
+                : `<button type="button" class="expense-add-button" data-show-expense-form="${category.id}">${category.isSavings ? "Add savings" : "Add expense"}</button>`
+            }
+          </div>
         </article>
       `;
     })
@@ -249,16 +251,10 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
             ? ""
             : `
               <div class="collapsible-body">
-                <form id="income-form">
-                  <div class="field-row">
-                    <input name="name" placeholder="Name" required />
-                    <input name="amount" type="number" min="0" step="0.01" placeholder="Amount" required />
-                    <select name="frequency">${options("biweekly")}</select>
-                  </div>
-                  <textarea name="notes" placeholder="Notes"></textarea>
-                  <button type="submit">Add income</button>
-                </form>
-                <div class="pill-list">${incomeRows || '<div class="empty-state">No income yet.</div>'}</div>
+                <div class="pill-list">
+                  ${incomeRows || '<div class="empty-state">No income yet.</div>'}
+                  <button type="button" class="income-add-button" data-add-income>Add income</button>
+                </div>
               </div>
             `
         }

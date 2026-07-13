@@ -774,31 +774,6 @@ function wireEvents(state) {
     });
     if (categoryId && groups.size) list.replaceChildren(...nodes);
   });
-  const incomeForm = document.querySelector("#income-form");
-  if (incomeForm) {
-    incomeForm.elements.name.placeholder = "Income Source";
-    if (state.app.isAddingIncome !== true) {
-      const addIncomeButton = document.createElement("button");
-      addIncomeButton.type = "button";
-      addIncomeButton.className = "income-add-button";
-      addIncomeButton.dataset.showIncomeForm = "true";
-      addIncomeButton.textContent = "Add income";
-      incomeForm.parentNode.insertBefore(addIncomeButton, incomeForm);
-      incomeForm.remove();
-    } else {
-      const saveIncomeButton = incomeForm.querySelector(
-        'button[type="submit"]',
-      );
-      saveIncomeButton?.replaceChildren("Save income");
-      if (saveIncomeButton) saveIncomeButton.dataset.incomeSave = "true";
-      const cancelIncomeButton = document.createElement("button");
-      cancelIncomeButton.type = "button";
-      cancelIncomeButton.dataset.cancelIncome = "true";
-      cancelIncomeButton.className = "secondary";
-      cancelIncomeButton.textContent = "Cancel";
-      incomeForm.append(cancelIncomeButton);
-    }
-  }
   document
     .querySelectorAll(".expense-form, [data-edit-expense-form]")
     .forEach((form) => {
@@ -876,9 +851,7 @@ function wireEvents(state) {
         const label = document.createElement("label");
         label.className = "input-label";
         label.textContent =
-          field.name === "name" &&
-          (form.id === "income-form" ||
-            form.classList.contains("income-edit-form"))
+          field.name === "name" && form.classList.contains("income-edit-form")
             ? "Income Source"
             : {
                 amount: "Amount",
@@ -939,24 +912,6 @@ function wireEvents(state) {
     document.querySelector(".expense-form")?.elements.group &&
       (document.querySelector(".expense-form").elements.group.value =
         state.app.addingExpenseGroup);
-  document
-    .querySelector("#income-form")
-    ?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const data = new FormData(event.currentTarget);
-      const income = {
-        id: id(),
-        name: String(data.get("name") || "").trim(),
-        amount: Number(data.get("amount") || 0),
-        frequency: String(data.get("frequency") || "biweekly"),
-        notes: String(data.get("notes") || "").trim(),
-      };
-      if (!income.name || income.amount <= 0) return;
-      state.incomes.push(income);
-      state.app.isAddingIncome = false;
-      saveState(state);
-      render(state);
-    });
   document.querySelectorAll("[data-edit-income-form]").forEach((form) =>
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -974,6 +929,7 @@ function wireEvents(state) {
         notes: String(data.get("notes") || "").trim(),
       });
       state.app.editingIncomeId = "";
+      state.app.draftIncomeId = "";
       saveState(state);
       render(state);
     }),
@@ -1226,35 +1182,24 @@ app?.addEventListener("click", (event) => {
   }
   if (button.matches("[data-download-save]"))
     return downloadSaveFile(currentState);
-  if (button.matches("[data-income-save]")) {
-    event.preventDefault();
-    const form = button.form;
-    const data = new FormData(form);
-    const income = {
-      id: id(),
-      name: String(data.get("name") || "").trim(),
-      amount: Number(data.get("amount") || 0),
-      frequency: String(data.get("frequency") || "biweekly"),
-      notes: String(data.get("notes") || "").trim(),
-    };
-    if (!income.name || income.amount <= 0) return;
-    currentState.incomes.push(income);
-    currentState.app.isAddingIncome = false;
-    saveState(currentState);
-    render(currentState);
-    return;
-  }
   if (button.matches("[data-toggle-income]"))
     currentState.app.isIncomeOpen = currentState.app.isIncomeOpen === false;
   else if (button.matches("[data-toggle-budget-board]"))
     currentState.app.isBudgetBoardOpen =
       currentState.app.isBudgetBoardOpen === false;
-  else if (button.matches("[data-show-income-form]")) {
-    currentState.app.isAddingIncome = true;
-    elementToScrollTo = "#income-form";
-  } else if (button.matches("[data-cancel-income]"))
-    currentState.app.isAddingIncome = false;
-  else if (button.matches("[data-show-category-form]")) {
+  else if (button.matches("[data-add-income]")) {
+    const income = {
+      id: id(),
+      name: "",
+      amount: 0,
+      frequency: "biweekly",
+      notes: "",
+    };
+    currentState.incomes.push(income);
+    currentState.app.editingIncomeId = income.id;
+    currentState.app.draftIncomeId = income.id;
+    elementToScrollTo = `[data-edit-income-form="${income.id}"]`;
+  } else if (button.matches("[data-show-category-form]")) {
     const category = {
       id: id(),
       name: "",
@@ -1284,9 +1229,14 @@ app?.addEventListener("click", (event) => {
     currentState.app.draftCategoryId = "";
   } else if (button.matches("[data-edit-income]"))
     currentState.app.editingIncomeId = button.dataset.editIncome;
-  else if (button.matches("[data-cancel-edit-income]"))
+  else if (button.matches("[data-cancel-edit-income]")) {
+    if (currentState.app.draftIncomeId === currentState.app.editingIncomeId)
+      currentState.incomes = currentState.incomes.filter(
+        (income) => income.id !== currentState.app.draftIncomeId,
+      );
     currentState.app.editingIncomeId = "";
-  else if (button.matches("[data-show-expense-form]")) {
+    currentState.app.draftIncomeId = "";
+  } else if (button.matches("[data-show-expense-form]")) {
     const expenseId = addDraftExpense(
       currentState,
       button.dataset.showExpenseForm,

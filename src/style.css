@@ -19,6 +19,7 @@
   --gold: #ffcd00;
   --gold-dark: #c69214;
   --page-gutter: clamp(16px, 2vw, 32px);
+  --content-width: 1600px;
 }
 
 * {
@@ -64,7 +65,7 @@ button,
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  width: min(1120px, 100%);
+  width: min(var(--content-width), 100%);
   margin: clamp(32px, 5vw, 64px) auto 20px;
 }
 .app-header h1 {
@@ -80,7 +81,7 @@ button,
   align-items: center;
   min-height: 72px;
   margin: 0 calc(0px - var(--page-gutter));
-  padding: 1rem max(var(--page-gutter), calc((100% - 1120px) / 2));
+  padding: 1rem max(var(--page-gutter), calc((100% - var(--content-width)) / 2));
   background: var(--navy-950);
 }
 .site-brand {
@@ -105,7 +106,7 @@ button,
 }
 
 .card {
-  width: min(1120px, 100%);
+  width: min(var(--content-width), 100%);
   margin-right: auto;
   margin-left: auto;
   background: var(--surface);
@@ -422,9 +423,9 @@ header .actions {
   flex: 1 1 320px;
   min-width: 260px;
   min-height: 180px;
-  border: 2px dashed #93c5fd;
-  background: #eff6ff;
-  color: #1e3a8a;
+  border: 2px dashed var(--border);
+  background: var(--surface-muted);
+  color: var(--ink);
   font-weight: 700;
 }
 .category-column {
@@ -541,7 +542,6 @@ button.secondary {
 }
 .income-add-button {
   width: 100%;
-  margin-bottom: 10px;
   background: #2563eb;
   font-weight: 700;
 }

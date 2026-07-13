@@ -14,7 +14,7 @@ This document records the intentionally implemented behavior of mybudgeter. Trea
 
 ## Page layout and global conventions
 
-- The page uses a wide, responsive layout that grows with the browser window rather than staying in a narrow fixed column.
+- The page uses a wide, responsive layout that grows with the browser window up to a 1600px content width rather than staying in a narrow fixed column.
 - The page uses the portfolio's navy surfaces, serif headings, gold actions, and a Michael Yeh / Portfolio masthead. Category columns retain their assigned colors.
 - Visible labels accompany form controls so their meaning remains clear even when a field already has a value.
 - Titles and button labels use capitalized wording.
@@ -26,12 +26,12 @@ This document records the intentionally implemented behavior of mybudgeter. Trea
 
 - Net Income is collapsible. Its heading has a click to collapse / click to expand control on the same line as the income summary.
 - The collapsed summary shows the number of income sources and normalized monthly income.
-- Add Income is a large, visible action. The income form is hidden until it is requested.
-- The add/edit form has labeled Income Source, Amount, Frequency, and Notes fields.
+- Add Income appears after the last income item and creates a new editable income item.
+- The income edit form has labeled Income Source, Amount, Frequency, and Notes fields.
 - Income frequency defaults to Biweekly. Per Paycheck is not offered because it does not state an actual recurrence interval.
-- Saving creates or updates a compact income item and hides the form. Cancel also hides it without saving new form input.
+- Saving updates the compact income item and hides its edit form. Cancelling a newly added item removes it.
 - Each saved income item shows its name, amount, period, and, when present, `Note: ` followed by its note. Items can be edited or removed.
-- Selecting Add Income scrolls the newly displayed form into view.
+- Selecting Add Income scrolls the new item’s edit form into view.
 
 ## Budget Board and categories
 
@@ -51,7 +51,7 @@ This document records the intentionally implemented behavior of mybudgeter. Trea
 
 ## Expenses, savings, quantities, and frequencies
 
-- Add Expense and Add Savings create a new item in the selected category. Group Add Item creates an item in that group. These actions add an item rather than showing a separate top-of-category add form.
+- Add Expense and Add Savings appear after the last item in the selected category and create a new item there. Group Add Item creates an item in that group.
 - Newly added items are scrolled into view, including when the action occurs lower than the visible viewport.
 - An item can be edited to set Name, Amount, Quantity, Period Frequency, and optional Group.
 - Quantity accepts decimal values for prorated recurring costs, such as quantity 0.5 for a cost that occurs every two years but is entered as annual.
