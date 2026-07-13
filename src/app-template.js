@@ -217,7 +217,6 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
   return `
     <nav class="site-header" aria-label="Site navigation">
       <a class="site-brand" href="https://immichaelyeh.github.io/">Michael Yeh</a>
-      <a class="portfolio-link" href="https://immichaelyeh.github.io/">Portfolio</a>
     </nav>
 
     <header class="app-header">
