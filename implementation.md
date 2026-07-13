@@ -15,6 +15,7 @@ This document records the intentionally implemented behavior of mybudgeter. Trea
 ## Page layout and global conventions
 
 - The page uses a wide, responsive layout that grows with the browser window rather than staying in a narrow fixed column.
+- The page uses the portfolio's navy surfaces, serif headings, gold actions, and a Michael Yeh / Portfolio masthead. Category columns retain their assigned colors.
 - Visible labels accompany form controls so their meaning remains clear even when a field already has a value.
 - Titles and button labels use capitalized wording.
 - Save and Cancel controls use consistent themed colors that remain legible on every category color.

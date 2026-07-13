@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   font-family:
     Inter,
     system-ui,
@@ -7,8 +7,18 @@
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  background: #f3f4f6;
-  color: #111827;
+  background: #0b2945;
+  color: #edf5fa;
+  --navy-950: #071c35;
+  --navy-900: #0b2b4c;
+  --surface: #103452;
+  --surface-muted: #0b2945;
+  --border: #2d5877;
+  --ink: #edf5fa;
+  --muted: #b7c9d8;
+  --gold: #ffcd00;
+  --gold-dark: #c69214;
+  --page-gutter: clamp(16px, 2vw, 32px);
 }
 
 * {
@@ -19,8 +29,8 @@
 }
 body {
   margin: 0;
-  background: #f3f4f6;
-  color: #111827;
+  background: var(--surface-muted);
+  color: var(--ink);
 }
 button,
 input,
@@ -40,33 +50,70 @@ button,
   width: 100%;
   max-width: none;
   margin: 0 auto;
-  padding: clamp(16px, 2vw, 32px);
+  padding: 0 var(--page-gutter) var(--page-gutter);
 }
 .app-footer {
   padding: 8px 0 0;
-  color: #64748b;
+  color: var(--muted);
   font-size: 0.9rem;
   text-align: center;
 }
 
-header {
+.app-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  margin-bottom: 20px;
+  width: min(1120px, 100%);
+  margin: clamp(32px, 5vw, 64px) auto 20px;
 }
-header h1 {
+.app-header h1 {
   margin: 0 0 6px;
+  color: #fff;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2rem, 4vw, 3rem);
+  letter-spacing: -0.04em;
+}
+.site-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 72px;
+  margin: 0 calc(0px - var(--page-gutter));
+  padding: 1rem max(var(--page-gutter), calc((100% - 1120px) / 2));
+  background: var(--navy-950);
+}
+.site-brand {
+  color: #fff;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  text-decoration: none;
+}
+.portfolio-link {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+.portfolio-link:hover,
+.portfolio-link:focus {
+  color: var(--gold);
 }
 
 .card {
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 18px;
+  width: min(1120px, 100%);
+  margin-right: auto;
+  margin-left: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
   padding: 16px;
   margin-bottom: 16px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
 }
 .summary-grid {
   display: grid;
@@ -79,8 +126,8 @@ header h1 {
   gap: 12px;
 }
 .summary-item {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: #0c2944;
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 12px;
 }
@@ -93,8 +140,8 @@ header h1 {
   font-weight: 700;
 }
 .summary-card {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: #0c2944;
+  border: 1px solid var(--border);
   border-radius: 14px;
   padding: 12px;
 }
@@ -103,10 +150,10 @@ header h1 {
 }
 .collapsed-summary {
   padding: 12px;
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--border);
   border-radius: 12px;
-  background: #eff6ff;
-  color: #1e3a8a;
+  background: #0c2944;
+  color: var(--gold);
   font-weight: 700;
 }
 .summary-row {
@@ -122,11 +169,11 @@ header h1 {
 .summary-row.total-unspent {
   margin-top: 4px;
   padding-top: 8px;
-  border-top: 1px solid #cbd5e1;
-  color: #0f766e;
+  border-top: 1px solid var(--border);
+  color: #5eead4;
 }
 .summary-row.total-spent {
-  color: #b91c1c;
+  color: #fca5a5;
 }
 .notes-textarea {
   min-height: 220px;
@@ -176,10 +223,10 @@ select,
 textarea {
   width: 100%;
   padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid #cbd5e1;
-  background: #fff;
-  color: #111827;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #0c2944;
+  color: var(--ink);
 }
 textarea {
   min-height: 84px;
@@ -188,15 +235,18 @@ textarea {
 button,
 .button-like {
   border: 0;
-  border-radius: 10px;
+  border-radius: 6px;
   padding: 10px 12px;
   cursor: pointer;
-  background: #2563eb;
-  color: white;
+  background: var(--gold);
+  color: var(--navy-950);
+  font-weight: 800;
 }
 button.secondary,
 .button-like.secondary {
-  background: #64748b;
+  background: var(--navy-900);
+  color: var(--ink);
+  border: 1px solid var(--border);
 }
 .button-like input {
   display: none;
@@ -212,9 +262,9 @@ button.ghost {
   border: 1px solid rgba(255, 255, 255, 0.25);
 }
 button[type="submit"] {
-  background: #dbeafe;
-  color: #1e3a8a;
-  border: 1px solid #93c5fd;
+  background: var(--gold);
+  color: var(--navy-950);
+  border: 1px solid var(--gold);
   font-weight: 700;
 }
 button.small-button {
@@ -234,14 +284,14 @@ header .actions {
 .save-help {
   flex-basis: 100%;
   margin: 0;
-  color: #475569;
+  color: var(--muted);
   font-size: 0.8rem;
   line-height: 1.35;
   text-align: right;
 }
 .save-status {
   opacity: 0;
-  color: #15803d;
+  color: var(--gold);
   font-size: 0.85rem;
   transition: opacity 0.2s;
 }
@@ -294,7 +344,7 @@ header .actions {
   gap: 12px;
   flex-wrap: wrap;
   margin: 8px 0 14px;
-  color: #334155;
+  color: var(--muted);
   font-size: 0.95rem;
 }
 .category-form-meta .message {
@@ -302,9 +352,9 @@ header .actions {
   font-weight: 600;
 }
 .collapsible-card {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
   border-radius: 14px;
-  background: #f8fafc;
+  background: #0c2944;
 }
 .income-summary {
   padding: 12px 14px;
@@ -338,23 +388,23 @@ header .actions {
   gap: 10px;
   padding: 10px 12px;
   border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: #103452;
+  border: 1px solid var(--border);
 }
 .income-item {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-  border-left: 4px solid #2563eb;
+  background: #0c2944;
+  border-color: var(--border);
+  border-left: 4px solid var(--gold);
 }
 .income-note {
   margin-top: 5px;
-  color: #1e3a8a;
+  color: var(--muted);
   font-size: 0.9rem;
   white-space: pre-wrap;
 }
 .empty-state {
   padding: 10px 0;
-  color: #334155;
+  color: var(--muted);
   font-size: 0.95rem;
 }
 .empty-item {
