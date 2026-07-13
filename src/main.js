@@ -1,4 +1,4 @@
-const STORAGE_KEY = "mybudgeter-save-v1";
+const STORAGE_KEY = "MyBudgeter-save-v1";
 const app = document.querySelector("#app");
 const budget = window.budget;
 let currentState;
@@ -17,7 +17,7 @@ let withinGroupDropMode = "";
 let crossCategoryDropMode = "";
 let categoryToFocus = "";
 let elementToScrollTo = "";
-const DELETE_CONFIRM_KEY = "mybudgeter-delete-confirm-until";
+const DELETE_CONFIRM_KEY = "MyBudgeter-delete-confirm-until";
 const GROUP_PATH_SEPARATOR = budget.GROUP_SEPARATOR;
 
 const id = () => crypto.randomUUID();
@@ -459,7 +459,7 @@ function downloadSaveFile(state) {
   );
   const link = document.createElement("a");
   link.href = url;
-  link.download = "mybudgeter-save.json";
+  link.download = "MyBudgeter-save.json";
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -1033,7 +1033,7 @@ function wireEvents(state) {
         saveState(currentState);
         render(currentState);
       } catch {
-        window.alert("That does not look like a mybudgeter save file.");
+        window.alert("That does not look like a MyBudgeter save file.");
       } finally {
         event.target.value = "";
       }

@@ -1,10 +1,10 @@
 # Implementation Reference
 
-This document records the intentionally implemented behavior of mybudgeter. Treat these items as product requirements: do not remove or substantially change them unless the user explicitly asks to do so.
+This document records the intentionally implemented behavior of MyBudgeter. Treat these items as product requirements: do not remove or substantially change them unless the user explicitly asks to do so.
 
 ## Application model and persistence
 
-- mybudgeter is a client-side budgeting app with no server dependency.
+- MyBudgeter is a client-side budgeting app with no server dependency.
 - The working budget is automatically saved in browser local storage. A brief Saved status is shown after persistence.
 - The header keeps Download Save File and Import Save File controls together at the top right.
 - Download exports the full budget as JSON for backup. Importing a JSON save replaces the current budget after confirmation.
@@ -14,8 +14,8 @@ This document records the intentionally implemented behavior of mybudgeter. Trea
 
 ## Page layout and global conventions
 
-- The page uses a wide, responsive layout that grows with the browser window up to a 1600px content width rather than staying in a narrow fixed column.
-- The page uses the portfolio's navy surfaces, serif headings, gold actions, and a Michael Yeh / Portfolio masthead. Category columns retain their assigned colors.
+- The page uses a wide, responsive layout that grows with the browser window up to a 1600px content width rather than staying in a narrow fixed column. Its content gutters and Michael Yeh masthead align with the portfolio at the same browser width.
+- The page uses the portfolio's navy surfaces, serif headings, gold actions, and the canonical Michael Yeh masthead stylesheet from the portfolio site. Category columns retain their assigned colors.
 - Visible labels accompany form controls so their meaning remains clear even when a field already has a value.
 - Titles and button labels use capitalized wording.
 - Save and Cancel controls use consistent themed colors that remain legible on every category color.

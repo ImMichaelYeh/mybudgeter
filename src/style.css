@@ -18,8 +18,9 @@
   --muted: #b7c9d8;
   --gold: #ffcd00;
   --gold-dark: #c69214;
-  --page-gutter: clamp(16px, 2vw, 32px);
+  --page-gutter: 2rem;
   --content-width: 1600px;
+  --site-brand-offset: max(2rem, calc((100vw - var(--content-width)) / 2 + 2rem));
 }
 
 * {
@@ -81,7 +82,7 @@ button,
   align-items: center;
   min-height: 72px;
   margin: 0 calc(0px - var(--page-gutter));
-  padding: 1rem max(var(--page-gutter), calc((100% - var(--content-width)) / 2));
+  padding: 1rem var(--site-brand-offset);
   background: var(--navy-950);
 }
 .site-brand {
@@ -957,6 +958,9 @@ button.secondary {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.24);
   font-size: 0.75rem;
+}
+@media (max-width: 575.98px) {
+  :root { --page-gutter: 1.25rem; --site-brand-offset: 1.25rem; }
 }
 @media (max-width: 720px) {
   header {

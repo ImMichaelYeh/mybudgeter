@@ -56,7 +56,7 @@ const DEFAULT_CATEGORIES = [
 function createEmptyState() {
   return {
     version: 1,
-    schema: "mybudgeter-budget-v1",
+    schema: "MyBudgeter-budget-v1",
     exportedAt: new Date().toISOString(),
     app: {
       paychecksPerMonth: DEFAULT_PAYCHECKS_PER_MONTH,

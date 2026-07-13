@@ -1,6 +1,6 @@
-# mybudgeter
+# MyBudgeter
 
-mybudgeter is a browser-based personal budgeting board. Add income sources, assign monthly budget targets to categories, and track recurring expenses or savings items at different frequencies. The board converts entries to monthly amounts so you can compare actual spending, savings, and unspent income against your budget.
+MyBudgeter is a browser-based personal budgeting board. Add income sources, assign monthly budget targets to categories, and track recurring expenses or savings items at different frequencies. The board converts entries to monthly amounts so you can compare actual spending, savings, and unspent income against your budget.
 
 Key features include:
 

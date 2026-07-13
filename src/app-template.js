@@ -221,7 +221,7 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
 
     <header class="app-header">
       <div>
-        <h1>mybudgeter</h1>
+        <h1>MyBudgeter</h1>
         <p class="small">A simple budgeting board.</p>
       </div>
       <div class="actions">
