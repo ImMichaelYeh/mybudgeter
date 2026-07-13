@@ -51,6 +51,65 @@ test("default state has the intended categories and savings setup", () => {
   );
 });
 
+test("imports current and legacy MyBudgeter save files", () => {
+  const budget = loadBudget();
+  const currentSave = budget.createEmptyState();
+  currentSave.incomes = [
+    { id: "income-1", name: "Work", amount: 1000, frequency: "biweekly" },
+  ];
+  currentSave.expenses = [
+    {
+      id: "expense-1",
+      name: "Rent",
+      amount: 1200,
+      multiplier: 1,
+      frequency: "monthly",
+      categoryId: "default-needs",
+      group: "Home",
+      sortOrder: 1,
+    },
+  ];
+
+  const exportedSave = budget.createSavePayload(currentSave);
+  const importedCurrent = budget.normalizeSaveState(exportedSave);
+  assert.equal(importedCurrent.schema, exportedSave.schema);
+  assert.match(importedCurrent.exportedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual(plain(importedCurrent.incomes), plain(currentSave.incomes));
+  assert.deepEqual(plain(importedCurrent.categories), plain(currentSave.categories));
+  assert.deepEqual(plain(importedCurrent.expenses), plain(currentSave.expenses));
+
+  const legacySave = {
+    ...currentSave,
+    schema: "mybudgeter-budget-v1",
+    expenses: [
+      {
+        id: "expense-2",
+        name: "Membership",
+        amount: "20",
+        frequency: "monthly",
+        categoryId: "default-wants",
+      },
+    ],
+  };
+  const importedLegacy = budget.normalizeSaveState(legacySave);
+  assert.equal(importedLegacy.schema, "mybudgeter-budget-v1");
+  assert.deepEqual(plain(importedLegacy.expenses[0]), {
+    ...legacySave.expenses[0],
+    amount: 20,
+    multiplier: 1,
+    sortOrder: 1,
+    group: "",
+  });
+});
+
+test("rejects files that are not MyBudgeter save files", () => {
+  const budget = loadBudget();
+  assert.throws(
+    () => budget.normalizeSaveState({ schema: "another-app-v1" }),
+    /Unsupported save file/,
+  );
+});
+
 test("normalizes income and recurring costs to monthly and period amounts", () => {
   const budget = loadBudget();
 

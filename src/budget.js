@@ -86,6 +86,13 @@ function createSeedState() {
   return createEmptyState();
 }
 
+function createSavePayload(state) {
+  return {
+    ...state,
+    exportedAt: new Date().toISOString(),
+  };
+}
+
 function splitGroupPath(group) {
   return String(group || "")
     .split(GROUP_SEPARATOR)
@@ -352,12 +359,54 @@ function sortExpenses(expenses, sort = "manual") {
   return sorted;
 }
 
+function normalizeSaveState(value) {
+  const base = createEmptyState();
+  if (
+    !value ||
+    String(value.schema).toLowerCase() !== base.schema.toLowerCase()
+  ) {
+    throw new Error("Unsupported save file");
+  }
+  return {
+    ...base,
+    ...value,
+    app: {
+      ...base.app,
+      ...(value.app || {}),
+      isAddingCategory: false,
+      categorySort: "manual",
+      expenseSort: "manual",
+      expenseSorts: {},
+    },
+    incomes: Array.isArray(value.incomes) ? value.incomes : [],
+    categories: (Array.isArray(value.categories)
+      ? value.categories
+      : base.categories
+    ).map((item, index) => ({
+      ...item,
+      sortOrder: item.sortOrder || index + 1,
+      isSavings: Boolean(item.isSavings) || item.id === "default-savings",
+      color: item.color || CATEGORY_COLORS[index % CATEGORY_COLORS.length],
+    })),
+    expenses: (Array.isArray(value.expenses) ? value.expenses : []).map(
+      (item, index) => ({
+        ...item,
+        amount: Number(item.amount) || 0,
+        multiplier: Math.max(0.01, Number(item.multiplier) || 1),
+        sortOrder: item.sortOrder || index + 1,
+        group: item.group || "",
+      }),
+    ),
+  };
+}
+
 window.budget = {
   FREQUENCY_OPTIONS,
   CATEGORY_COLORS,
   GROUP_SEPARATOR,
   createEmptyState,
   createSeedState,
+  createSavePayload,
   splitGroupPath,
   isGroupOrDescendant,
   moveGroupIntoGroup,
@@ -368,4 +417,5 @@ window.budget = {
   getCategoryPercentageTotal,
   sortCategories,
   sortExpenses,
+  normalizeSaveState,
 };
