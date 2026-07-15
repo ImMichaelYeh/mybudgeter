@@ -47,6 +47,9 @@ test("default state has the intended categories and savings setup", () => {
   assert.equal(budget.getCategoryPercentageTotal(state), 100);
   assert.ok(budget.FREQUENCY_OPTIONS.some(({ value }) => value === "biweekly"));
   assert.ok(
+    budget.FREQUENCY_OPTIONS.some(({ value }) => value === "semi-monthly"),
+  );
+  assert.ok(
     !budget.FREQUENCY_OPTIONS.some(({ value }) => value === "per-paycheck"),
   );
 });
@@ -72,6 +75,8 @@ test("imports current and legacy MyBudgeter save files", () => {
 
   const exportedSave = budget.createSavePayload(currentSave);
   const importedCurrent = budget.normalizeSaveState(exportedSave);
+  assert.equal(exportedSave.version, budget.APP_VERSION);
+  assert.equal(exportedSave.schema, budget.SAVE_FILE_SCHEMA);
   assert.equal(importedCurrent.schema, exportedSave.schema);
   assert.match(importedCurrent.exportedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.deepEqual(plain(importedCurrent.incomes), plain(currentSave.incomes));
@@ -80,6 +85,7 @@ test("imports current and legacy MyBudgeter save files", () => {
 
   const legacySave = {
     ...currentSave,
+    version: 1,
     schema: "mybudgeter-budget-v1",
     expenses: [
       {
@@ -92,7 +98,8 @@ test("imports current and legacy MyBudgeter save files", () => {
     ],
   };
   const importedLegacy = budget.normalizeSaveState(legacySave);
-  assert.equal(importedLegacy.schema, "mybudgeter-budget-v1");
+  assert.equal(importedLegacy.version, budget.APP_VERSION);
+  assert.equal(importedLegacy.schema, budget.SAVE_FILE_SCHEMA);
   assert.deepEqual(plain(importedLegacy.expenses[0]), {
     ...legacySave.expenses[0],
     amount: 20,
@@ -108,12 +115,17 @@ test("rejects files that are not MyBudgeter save files", () => {
     () => budget.normalizeSaveState({ schema: "another-app-v1" }),
     /Unsupported save file/,
   );
+  assert.throws(
+    () => budget.normalizeSaveState({ schema: "MyBudgeter-budget-v2" }),
+    /Unsupported save file/,
+  );
 });
 
 test("normalizes income and recurring costs to monthly and period amounts", () => {
   const budget = loadBudget();
 
   assertClose(budget.normalizeToMonthly(1000, "biweekly"), 2172.62);
+  assertClose(budget.normalizeToMonthly(1000, "semi-monthly"), 2000);
   assertClose(budget.normalizeToMonthly(100, "weekly"), 434.524);
   assertClose(budget.normalizeToMonthly(1200, "annually"), 100);
   assertClose(budget.toPeriodAmount(100, "monthly", "annual"), 1200);

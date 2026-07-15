@@ -598,6 +598,46 @@ function wireEvents(state) {
   });
   notesCard.append(notesHeading, notesEditor);
   app?.append(notesCard);
+  const faqCard = document.createElement("section");
+  faqCard.className = "card faq-card";
+  faqCard.innerHTML = `
+    <details>
+      <summary><h2>FAQ</h2><span>click to expand</span></summary>
+      <div class="faq-content">
+        <details class="faq-question">
+          <summary>How does MyBudgeter calculate my budget?</summary>
+          <p>Enter each income source, expense, and savings contribution with its amount and frequency. MyBudgeter converts every recurring value to a monthly average so amounts with different schedules can be compared fairly. Category targets are calculated from your monthly net income and each category's budget percentage. The Budget Board shows actual spending or savings against that target, while Complete Summary shows the same plan across weekly, biweekly, monthly, quarterly, and annual views.</p>
+          <p>Uncategorized is the portion of normalized income not yet assigned to expenses or savings. Total Unspent includes both your savings contributions and Uncategorized money. These figures are planning estimates based only on what you enter; they do not connect to or reconcile with a bank account.</p>
+        </details>
+        <details class="faq-question">
+          <summary>What do the frequency options mean?</summary>
+          <p>Frequency describes how often an entered amount occurs. Daily uses an average of 30.4375 days per month. Weekly uses 4.34524 weeks per month. Biweekly means once every two weeks, or about 2.17262 payments per month. Semi-monthly means exactly two payments each month, such as the 1st and 15th. Monthly is once per month, quarterly is once every three months, and annually is once per year.</p>
+          <p>Choose Semi-monthly when a payment happens twice in every calendar month; choose Biweekly when it happens every 14 days. Those schedules are not the same over a full year. The app uses the selected frequency for income, expenses, and savings. If you use Quantity for an item, the item amount is multiplied by that quantity before the frequency is converted to a monthly amount.</p>
+        </details>
+        <details class="faq-question">
+          <summary>What can I do in the app?</summary>
+          <p>You can add and edit multiple income sources, including optional notes. Create expense and savings categories with a budget percentage, then add recurring items to each category. A category named Savings is automatically marked as a savings category unless you manually change that setting. You can track decimal quantities for prorated recurring costs, such as half of a biennial cost entered annually.</p>
+          <p>You can organize items into groups and nested subgroups, rename or delete a whole group, and drag categories, groups, and items to manually reorder or move them between categories. The app also includes a Notes area, collapsed Net Income and Budget Board sections, category targets and usage, and a Complete Summary across several time periods.</p>
+        </details>
+        <details class="faq-question">
+          <summary>How do saving, downloading, and importing work?</summary>
+          <p>Your working budget automatically saves in this browser's local storage shortly after changes are made. Use Download Save File to create a JSON backup containing your income, categories, items, notes, organization, colors, and relevant preferences. Keep downloaded files somewhere you control if the information is important to you.</p>
+          <p>Use Import Save File to restore a downloaded MyBudgeter JSON file or move a budget to another browser or device. Importing replaces the current budget after confirmation, so download a backup first if you may want to keep the existing budget. Save files record the app version and are designed to remain compatible within the same major version.</p>
+        </details>
+        <details class="faq-question">
+          <summary>Where is my data stored and who can see it?</summary>
+          <p>MyBudgeter is a client-side app with no server dependency. Your active budget is stored in the local storage for the browser and browser profile you use. It is not automatically uploaded to a MyBudgeter account because the app does not provide one.</p>
+          <p>Clearing browser site data, using a different browser profile, or losing access to a device can remove that local copy. Download save files regularly to protect against that. Anyone with access to your browser profile or a downloaded save file may be able to view its contents, so treat backups as private financial information.</p>
+        </details>
+        <details class="faq-question">
+          <summary>What can the app not do?</summary>
+          <p>MyBudgeter does not connect to banks, credit cards, payroll systems, or other financial institutions. It cannot import transactions automatically, categorize purchases for you, send bill reminders, make payments, or reconcile planned amounts with an account balance. There is no cloud sync, account sign-in, shared household budget, or real-time collaboration.</p>
+          <p>The app is a budgeting planner, not tax, legal, investment, or financial advice. It does not guarantee that a plan is affordable or that an entered schedule, tax withholding, debt balance, interest calculation, or exchange rate is correct. Review your entries and consult an appropriate professional when you need advice for a financial decision.</p>
+        </details>
+      </div>
+    </details>
+  `;
+  app?.append(faqCard);
   const saveActions = document.querySelector("header .actions");
   if (saveActions) {
     const help = document.createElement("p");

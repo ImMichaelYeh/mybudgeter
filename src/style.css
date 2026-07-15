@@ -60,6 +60,12 @@ button,
   font-size: 0.9rem;
   text-align: center;
 }
+.app-version {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}
 
 .app-header {
   display: flex;
@@ -166,6 +172,50 @@ button,
 }
 .notes-textarea {
   min-height: 220px;
+}
+.faq-card > details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  list-style: none;
+}
+.faq-card > details > summary::-webkit-details-marker {
+  display: none;
+}
+.faq-card > details > summary h2 {
+  margin: 0;
+}
+.faq-card > details > summary span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.faq-card > details[open] > summary span {
+  font-size: 0;
+}
+.faq-card > details[open] > summary span::after {
+  content: "click to collapse";
+  font-size: 0.8rem;
+}
+.faq-content {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+}
+.faq-question {
+  border-top: 1px solid var(--border);
+  padding: 10px 0;
+}
+.faq-question summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.faq-question p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 form {

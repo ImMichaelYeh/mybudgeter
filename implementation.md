@@ -7,10 +7,11 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 - MyBudgeter is a client-side budgeting app with no server dependency.
 - The working budget is automatically saved in browser local storage. A brief Saved status is shown after persistence.
 - The header keeps Download Save File and Import Save File controls together at the top right.
-- Download exports the full budget as JSON for backup. Importing a JSON save replaces the current budget after confirmation.
+- A small semantic app version appears immediately after the MyBudgeter title.
+- Download exports the full budget as JSON for backup. Importing a JSON save replaces the current budget after confirmation. Each file records the current semantic app version and a schema tied to its major version.
 - The save help text explains that the budget is stored locally in the browser, recommends downloading a backup, and warns that importing overwrites current data.
 - The exported state includes incomes, categories, items, notes, ordering, colors, grouping, collapse state, and relevant app preferences.
-- Normalization keeps older saved data usable and supplies defaults for newer fields.
+- Normalization keeps older saves from the current major version usable and supplies defaults for newer fields. A new major version is reserved for a save-format change that cannot import earlier files; backwards-compatible product changes use a minor version and fixes or non-visible changes use a patch version.
 
 ## Page layout and global conventions
 
@@ -28,7 +29,7 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 - The collapsed summary shows the number of income sources and normalized monthly income.
 - Add Income appears after the last income item and creates a new editable income item.
 - The income edit form has labeled Income Source, Amount, Frequency, and Notes fields.
-- Income frequency defaults to Biweekly. Per Paycheck is not offered because it does not state an actual recurrence interval.
+- Income frequency defaults to Biweekly. Semi-monthly is available for two payments each month. Per Paycheck is not offered because it does not state an actual recurrence interval.
 - Saving updates the compact income item and hides its edit form. Cancelling a newly added item removes it.
 - Each saved income item shows its name, amount, period, and, when present, `Note: ` followed by its note. Items can be edited or removed.
 - Selecting Add Income scrolls the new item’s edit form into view.
@@ -57,7 +58,7 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 - Quantity accepts decimal values for prorated recurring costs, such as quantity 0.5 for a cost that occurs every two years but is entered as annual.
 - The quantity spinner and arrow keys move in whole-number increments. Arrow Up rounds to the next whole number and Arrow Down rounds to the prior whole number, with a minimum of 1 for those controls.
 - When quantity differs from 1, an item shows the calculation: single item cost × quantity = total, followed by its period frequency.
-- Items use the available recurrence frequencies and all calculations normalize them to monthly amounts for comparison and summaries.
+- Items use the available recurrence frequencies, including Semi-monthly, and all calculations normalize them to monthly amounts for comparison and summaries.
 - Expense and savings items have a drag icon on the left and an edit control. The old Copy action is not shown.
 
 ## Groups and item organization
@@ -88,6 +89,10 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 - Notes is a dedicated section below Complete Summary.
 - It is a simple plain-text textarea with no Markdown mode, formatting toolbar, or rich-text behavior.
 - Notes autosave with the rest of the budget and are included in downloaded save files.
+
+## FAQ
+
+- FAQ is the bottom section above the footer and is collapsed by default. Each detailed question is also collapsed by default and explains budget calculations, frequency calculations, available budgeting features, local save-file behavior and privacy, and unsupported capabilities including bank connections, automatic transaction imports, cloud sync, and shared budgets.
 
 ## Source structure
 

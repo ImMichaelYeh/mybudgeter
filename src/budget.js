@@ -2,12 +2,15 @@ const FREQUENCY_OPTIONS = [
   { value: "daily", label: "Daily" },
   { value: "weekly", label: "Weekly" },
   { value: "biweekly", label: "Biweekly" },
+  { value: "semi-monthly", label: "Semi-monthly" },
   { value: "monthly", label: "Monthly" },
   { value: "quarterly", label: "Quarterly" },
   { value: "annually", label: "Annually" },
 ];
 
 const DEFAULT_PAYCHECKS_PER_MONTH = 2;
+const APP_VERSION = "1.0.0";
+const SAVE_FILE_SCHEMA = `MyBudgeter-budget-v${APP_VERSION.split(".")[0]}`;
 const GROUP_SEPARATOR = " / ";
 const CATEGORY_COLORS = [
   "#2563eb",
@@ -21,6 +24,7 @@ const MONTHLY_FACTORS = {
   daily: 30.4375,
   weekly: 4.34524,
   biweekly: 2.17262,
+  "semi-monthly": 2,
   monthly: 1,
   quarterly: 1 / 3,
   annually: 1 / 12,
@@ -55,8 +59,8 @@ const DEFAULT_CATEGORIES = [
 
 function createEmptyState() {
   return {
-    version: 1,
-    schema: "MyBudgeter-budget-v1",
+    version: APP_VERSION,
+    schema: SAVE_FILE_SCHEMA,
     exportedAt: new Date().toISOString(),
     app: {
       paychecksPerMonth: DEFAULT_PAYCHECKS_PER_MONTH,
@@ -89,6 +93,8 @@ function createSeedState() {
 function createSavePayload(state) {
   return {
     ...state,
+    version: APP_VERSION,
+    schema: SAVE_FILE_SCHEMA,
     exportedAt: new Date().toISOString(),
   };
 }
@@ -370,6 +376,8 @@ function normalizeSaveState(value) {
   return {
     ...base,
     ...value,
+    version: APP_VERSION,
+    schema: SAVE_FILE_SCHEMA,
     app: {
       ...base.app,
       ...(value.app || {}),
@@ -401,6 +409,8 @@ function normalizeSaveState(value) {
 }
 
 window.budget = {
+  APP_VERSION,
+  SAVE_FILE_SCHEMA,
   FREQUENCY_OPTIONS,
   CATEGORY_COLORS,
   GROUP_SEPARATOR,
