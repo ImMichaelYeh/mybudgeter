@@ -9,7 +9,7 @@ const FREQUENCY_OPTIONS = [
 ];
 
 const DEFAULT_PAYCHECKS_PER_MONTH = 2;
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.1.0";
 const SAVE_FILE_SCHEMA = `MyBudgeter-budget-v${APP_VERSION.split(".")[0]}`;
 const GROUP_SEPARATOR = " / ";
 const CATEGORY_COLORS = [
@@ -201,6 +201,10 @@ function toPeriodAmount(
       "per-paycheck": monthlyAmount / paychecksPerMonth,
     }[period] ?? monthlyAmount
   );
+}
+
+function getCategorySharePercent(amount, categoryTotal) {
+  return categoryTotal ? (amount / categoryTotal) * 100 : 0;
 }
 
 function getBudgetSummary(state) {
@@ -423,6 +427,7 @@ window.budget = {
   moveGroupToCategory,
   normalizeToMonthly,
   toPeriodAmount,
+  getCategorySharePercent,
   getBudgetSummary,
   getCategoryPercentageTotal,
   sortCategories,

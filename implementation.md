@@ -58,6 +58,7 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 - Quantity accepts decimal values for prorated recurring costs, such as quantity 0.5 for a cost that occurs every two years but is entered as annual.
 - The quantity spinner and arrow keys move in whole-number increments. Arrow Up rounds to the next whole number and Arrow Down rounds to the prior whole number, with a minimum of 1 for those controls.
 - When quantity differs from 1, an item shows the calculation: single item cost × quantity = total, followed by its period frequency.
+- Each individual item and group shows its normalized monthly amount as a percentage of its category's monthly budget target.
 - Items use the available recurrence frequencies, including Semi-monthly, and all calculations normalize them to monthly amounts for comparison and summaries.
 - Expense and savings items have a drag icon on the left and an edit control. The old Copy action is not shown.
 

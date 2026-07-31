@@ -273,7 +273,13 @@ function nextSubgroupName(state, categoryId, parentGroup) {
   return name;
 }
 
-function renderNestedGroups(list, state, categoryId, formatCurrency) {
+function renderNestedGroups(
+  list,
+  state,
+  categoryId,
+  categoryTarget,
+  formatCurrency,
+) {
   const groupedItems = [...list.children].map((item) => ({
     item,
     expense: state.expenses.find(
@@ -349,7 +355,7 @@ function renderNestedGroups(list, state, categoryId, formatCurrency) {
     heading.textContent = group.name;
     const total = document.createElement("strong");
     total.className = "group-total";
-    total.textContent = `${formatCurrency(monthlyTotal)} / Month`;
+    total.textContent = `${formatCurrency(monthlyTotal)} / Month · ${budget.getCategorySharePercent(monthlyTotal, categoryTarget).toFixed(1)}%`;
     const rename = document.createElement("button");
     rename.type = "button";
     rename.className = "ghost small-button";
@@ -687,7 +693,19 @@ function wireEvents(state) {
   if (board && addCategoryButton) board.append(addCategoryButton);
   document.querySelectorAll(".expense-list").forEach((list) => {
     const categoryId = list.closest("[data-category-id]")?.dataset.categoryId;
-    if (renderNestedGroups(list, state, categoryId, formatCurrency)) return;
+    const categoryTarget = summary.categories.find(
+      (category) => category.id === categoryId,
+    )?.monthlyTarget;
+    if (
+      renderNestedGroups(
+        list,
+        state,
+        categoryId,
+        categoryTarget,
+        formatCurrency,
+      )
+    )
+      return;
     const groups = new Map();
     const nodes = [];
     [...list.children].forEach((item) => {
@@ -729,7 +747,7 @@ function wireEvents(state) {
         heading.textContent = group;
         const total = document.createElement("strong");
         total.className = "group-total";
-        total.textContent = `${formatCurrency(groupTotal)} / Month`;
+        total.textContent = `${formatCurrency(groupTotal)} / Month · ${budget.getCategorySharePercent(groupTotal, categoryTarget).toFixed(1)}%`;
         const rename = document.createElement("button");
         rename.type = "button";
         rename.className = "ghost small-button";

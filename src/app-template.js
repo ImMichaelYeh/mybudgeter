@@ -130,6 +130,16 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
             `;
           }
 
+          const monthlyAmount = window.budget.normalizeToMonthly(
+            item.amount * (item.multiplier || 1),
+            item.frequency,
+            state.app.paychecksPerMonth,
+          );
+          const categoryShare = window.budget.getCategorySharePercent(
+            monthlyAmount,
+            detail?.monthlyTarget,
+          );
+
           return `
             <div class="expense-item" draggable="true" data-expense-id="${item.id}">
               <div>
@@ -137,6 +147,7 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
                 <div class="small">
                   ${money(item.amount * (item.multiplier || 1))} &middot; ${escapeHtml(item.frequency)}
                   ${item.multiplier > 1 ? `&middot; &times;${item.multiplier}` : ""}
+                  &middot; ${categoryShare.toFixed(1)}%
                 </div>
                 ${item.group ? `<div class="tag">${escapeHtml(item.group)}</div>` : ""}
               </div>

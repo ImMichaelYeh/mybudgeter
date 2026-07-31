@@ -246,6 +246,14 @@ test("summary separates expenses, savings, unspent money, and category usage", (
   assertClose(summary.periods.annual.savings, 2400);
 });
 
+test("category shares use normalized monthly amounts", () => {
+  const budget = loadBudget();
+
+  assertClose(budget.getCategorySharePercent(50, 100), 50);
+  assertClose(budget.getCategorySharePercent(217.262, 434.524), 50);
+  assert.equal(budget.getCategorySharePercent(50, 0), 0);
+});
+
 test("category and item sorting follows the selected rule without changing input order", () => {
   const budget = loadBudget();
   const state = budget.createEmptyState();
