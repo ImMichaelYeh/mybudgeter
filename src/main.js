@@ -847,17 +847,11 @@ function wireEvents(state) {
   const categoryMeta = document.querySelector(".category-form-meta");
   if (categoryMeta) {
     const categoryTotal = budget.getCategoryPercentageTotal(state);
-    const categorizedTotal = summary.monthlyExpenses + summary.monthlySavings;
-    const categorizedPercent = summary.monthlyIncome
-      ? (categorizedTotal / summary.monthlyIncome) * 100
-      : 0;
     const overage = categoryTotal - 100;
     categoryMeta.replaceChildren();
     const budgetTotal = document.createElement("span");
     budgetTotal.textContent = `Categories Total: ${categoryTotal.toFixed(1)}%`;
-    const categorized = document.createElement("span");
-    categorized.textContent = `Categorized: ${categorizedPercent.toFixed(1)}%`;
-    categoryMeta.append(budgetTotal, categorized);
+    categoryMeta.append(budgetTotal);
     if (overage > 0) {
       const warning = document.createElement("span");
       warning.className = "message";
@@ -884,7 +878,9 @@ function wireEvents(state) {
   if (board) {
     const periodLabel = document.createElement("label");
     periodLabel.className = "board-period-control";
-    periodLabel.append("Budget Period ");
+    const periodName = document.createElement("span");
+    periodName.textContent = "Budget Period";
+    periodLabel.append(periodName);
     const periodSelect = document.createElement("select");
     periodSelect.dataset.boardPeriodSelect = "";
     for (const [key, label] of budget.SUMMARY_PERIODS) {
@@ -918,6 +914,7 @@ function wireEvents(state) {
     layoutSelect.value = String(state.app.categoriesPerRow);
     layoutSelect.addEventListener("change", () => {
       state.app.categoriesPerRow = Number(layoutSelect.value);
+      board.dataset.categoriesPerRow = String(state.app.categoriesPerRow);
       board.style.setProperty(
         "--categories-per-row",
         state.app.categoriesPerRow,
@@ -2432,6 +2429,8 @@ window.addEventListener("pagehide", flushSave);
 
 async function startApp() {
   try {
+    const display = await platform.displayCurrency();
+    budget.setCurrencyDisplay(display.locale, display.currency);
     currentState = await loadState();
     currentState.app.editingIncomeId = "";
     render(currentState);

@@ -17,7 +17,7 @@ const SUMMARY_PERIODS = [
   ["quarterly", "Quarterly"],
   ["annual", "Annually"],
 ];
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.6.0";
 const SAVE_FILE_SCHEMA = `MyBudgeter-budget-v${APP_VERSION.split(".")[0]}`;
 const GROUP_SEPARATOR = " / ";
 const CATEGORY_COLORS = [
@@ -113,8 +113,20 @@ function createSavePayload(state) {
   };
 }
 
+let currencySymbol = "$";
+
+function setCurrencyDisplay(locale, currency) {
+  const formatter = new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency,
+    currencyDisplay: "narrowSymbol",
+  });
+  currencySymbol = formatter.formatToParts(0)
+    .find((part) => part.type === "currency").value;
+}
+
 function formatMoney(value) {
-  return `$${Number(value || 0).toLocaleString("en-US", {
+  return `${currencySymbol}${Number(value || 0).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -753,6 +765,7 @@ window.budget = {
   createSeedState,
   createSavePayload,
   formatMoney,
+  setCurrencyDisplay,
   setCategoryColor,
   splitGroupPath,
   isGroupOrDescendant,

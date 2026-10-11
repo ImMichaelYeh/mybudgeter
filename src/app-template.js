@@ -261,15 +261,14 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
       <div class="section-heading budget-board-heading"><div class="budget-board-title"><h2>Budget board</h2></div>${categoryForm}</div>
       <div class="category-form-meta">
         <span>Categories Total: ${categoryTotal.toFixed(1)}%</span>
-        <span>Categorized: ${(summary.monthlyIncome ? ((summary.monthlyExpenses + summary.monthlySavings) / summary.monthlyIncome) * 100 : 0).toFixed(1)}%</span>
       </div>
-      <div class="board">${board || '<div class="empty-state">No categories yet.</div>'}</div>
+      <div class="board" data-categories-per-row="${state.app.categoriesPerRow}">${board || '<div class="empty-state">No categories yet.</div>'}</div>
     </section>
 
     <section class="card">
       <div class="section-heading summary-heading"><div><h2>Complete summary</h2></div>
-        <label class="summary-period-control">Period
-          <select data-summary-period-select>${periods.map(([key, label]) => `<option value="${key}" ${key === state.app.summaryPeriod ? "selected" : ""}>${label}</option>`).join("")}</select>
+        <label class="summary-period-control"><span>Period</span>
+          <select aria-label="Complete Summary Period" data-summary-period-select>${periods.map(([key, label]) => `<option value="${key}" ${key === state.app.summaryPeriod ? "selected" : ""}>${label}</option>`).join("")}</select>
         </label>
       </div>
       <div class="summary-grid-wide">${summaryCards}</div>

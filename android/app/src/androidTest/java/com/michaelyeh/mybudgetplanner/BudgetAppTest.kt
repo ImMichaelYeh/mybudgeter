@@ -1,6 +1,8 @@
 package com.michaelyeh.mybudgetplanner
 
 import android.os.SystemClock
+import android.os.LocaleList
+import android.content.res.Configuration
 import android.view.View
 import android.view.MotionEvent
 import android.view.ViewGroup
@@ -17,6 +19,39 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class BudgetAppTest {
+    @Test fun currencySymbolFollowsAndroidLocaleWithoutChangingBudget() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            waitFor(scenario, "window.budgetReady === true && Boolean(currentState)")
+            var original: Configuration? = null
+            scenario.onActivity { activity -> original = Configuration(activity.resources.configuration) }
+            val before = evaluate(scenario, "JSON.stringify(currentState)")
+            try {
+                for ((locale, currency, symbol) in listOf(
+                    Triple("en-US", "USD", "$"),
+                    Triple("en-GB", "GBP", "\u00a3"),
+                    Triple("de-DE", "EUR", "\u20ac")
+                )) {
+                    scenario.onActivity { activity ->
+                        val configuration = Configuration(activity.resources.configuration)
+                        configuration.setLocales(LocaleList.forLanguageTags(locale))
+                        @Suppress("DEPRECATION")
+                        activity.resources.updateConfiguration(configuration, activity.resources.displayMetrics)
+                    }
+                    evaluate(scenario, "window.localeDisplayDone = false; budgetPlatform.displayCurrency().then(display => { window.localeDisplay = display; budget.setCurrencyDisplay(display.locale, display.currency); render(currentState); window.localeDisplayDone = true; });")
+                    waitFor(scenario, "window.localeDisplayDone === true")
+                    assertEquals(currency, evaluate(scenario, "window.localeDisplay.currency"))
+                    assertEquals("${symbol}1,234.50", evaluate(scenario, "budget.formatMoney(1234.5)"))
+                    assertEquals(before, evaluate(scenario, "JSON.stringify(currentState)"))
+                }
+            } finally {
+                scenario.onActivity { activity ->
+                    @Suppress("DEPRECATION")
+                    activity.resources.updateConfiguration(original!!, activity.resources.displayMetrics)
+                }
+            }
+        }
+    }
+
     @Before fun supportedWebView() {
         assumeTrue("Update the emulator WebView to version 100+ before running budget interaction tests", MainActivity.supportsWebView())
     }
@@ -91,8 +126,10 @@ class BudgetAppTest {
     }
 
     private fun assertSummarySelector(scenario: ActivityScenario<MainActivity>) {
-        assertEquals(true, evaluate(scenario, "(() => { const mobile = document.documentElement.classList.contains('android-app') || innerWidth <= 720; const category = document.querySelector('.category-column'); const toggle = category.querySelector('[data-toggle-category]'); if (!mobile) return getComputedStyle(toggle).display === 'none'; const list = category.querySelector('.expense-list'); const original = currentState.app.collapsedCategories[category.dataset.categoryId] === true; const groups = JSON.stringify(currentState.app.collapsedGroups); if (original) toggle.click(); toggle.click(); const collapsed = getComputedStyle(list).display === 'none' && toggle.getAttribute('aria-expanded') === 'false' && currentState.app.collapsedCategories[category.dataset.categoryId] === true && category.querySelector('.column-metrics').getBoundingClientRect().height > 0 && category.querySelector('.progress-bar').getBoundingClientRect().height > 0; toggle.click(); const expanded = getComputedStyle(list).display !== 'none' && toggle.getAttribute('aria-expanded') === 'true' && category.querySelector('.expense-list') === list && JSON.stringify(currentState.app.collapsedGroups) === groups; if (original) toggle.click(); const label = document.querySelector('.board-period-control'); const range = document.createRange(); range.selectNodeContents(label.firstChild); const textRect = range.getBoundingClientRect(); const select = label.querySelector('select').getBoundingClientRect(); return collapsed && expanded && select.left - textRect.right <= 10 && select.left >= textRect.right; })()"))
-        assertEquals(true, evaluate(scenario, "(() => { if (!document.documentElement.classList.contains('android-app') && innerWidth > 720) return true; const heading = document.querySelector('.budget-board-heading'); const warning = document.createElement('span'); warning.className = 'message'; warning.textContent = 'Warning: category targets exceed 100% by 25.0%.'; heading.querySelector('.budget-board-title').append(warning); const title = heading.querySelector('h2').getBoundingClientRect(); const toggle = heading.querySelector('.hint').getBoundingClientRect(); const warningRect = warning.getBoundingClientRect(); const meta = document.querySelector('.category-form-meta'); const totals = [...meta.querySelectorAll(':scope > span')].map(node => node.getBoundingClientRect()); const period = meta.querySelector('.board-period-control').getBoundingClientRect(); const valid = toggle.top <= title.bottom && toggle.bottom >= title.top && warningRect.top >= Math.max(title.bottom, toggle.bottom) && Math.abs(totals[0].top - totals[1].top) < 1 && period.top >= Math.max(totals[0].bottom, totals[1].bottom); warning.remove(); return valid; })()"))
+        assertEquals(true, evaluate(scenario, "(() => { const mobile = document.documentElement.classList.contains('android-app') || innerWidth <= 720; if (!mobile) return true; const heading = document.querySelector('.summary-heading'); const title = heading.querySelector('h2').getBoundingClientRect(); const select = heading.querySelector('select').getBoundingClientRect(); const label = heading.querySelector('.summary-period-control > span'); const meta = document.querySelector('.category-form-meta').getBoundingClientRect(); const period = document.querySelector('.board-period-control').getBoundingClientRect(); return getComputedStyle(label).display === 'none' && select.top <= title.bottom && select.bottom >= title.top && select.left >= title.right && heading.querySelector('select').getAttribute('aria-label') === 'Complete Summary Period' && Math.abs(period.right - meta.right) <= 1; })()"))
+        val categoryControlsValid = evaluate(scenario, "(() => { const mobile = document.documentElement.classList.contains('android-app') || innerWidth <= 720; const category = document.querySelector('.category-column'); const toggle = category.querySelector('[data-toggle-category]'); if (!mobile && currentState.app.categoriesPerRow !== 1) return getComputedStyle(toggle).display === 'none'; const list = category.querySelector('.expense-list'); const original = currentState.app.collapsedCategories[category.dataset.categoryId] === true; const groups = JSON.stringify(currentState.app.collapsedGroups); if (original) toggle.click(); toggle.click(); const collapsed = getComputedStyle(list).display === 'none' && toggle.getAttribute('aria-expanded') === 'false' && currentState.app.collapsedCategories[category.dataset.categoryId] === true && category.querySelector('.column-metrics').getBoundingClientRect().height > 0 && category.querySelector('.progress-bar').getBoundingClientRect().height > 0; toggle.click(); const expanded = getComputedStyle(list).display !== 'none' && toggle.getAttribute('aria-expanded') === 'true' && category.querySelector('.expense-list') === list && JSON.stringify(currentState.app.collapsedGroups) === groups; if (original) toggle.click(); const label = document.querySelector('.board-period-control'); const range = document.createRange(); range.selectNodeContents(label.firstChild); const textRect = range.getBoundingClientRect(); const select = label.querySelector('select').getBoundingClientRect(); window.categoryControlsDebug = {collapsed, expanded, mobile, select: select.toJSON(), text: textRect.toJSON()}; return collapsed && expanded && (!mobile || (select.left - textRect.right <= 10 && select.left >= textRect.right)); })()")
+        assertEquals(evaluate(scenario, "JSON.stringify(window.categoryControlsDebug)").toString(), true, categoryControlsValid)
+        assertEquals(true, evaluate(scenario, "(() => { if (!document.documentElement.classList.contains('android-app') && innerWidth > 720) return true; const heading = document.querySelector('.budget-board-heading'); const warning = document.createElement('span'); warning.className = 'message'; warning.textContent = 'Warning: category targets exceed 100% by 25.0%.'; heading.querySelector('.budget-board-title').append(warning); const title = heading.querySelector('h2').getBoundingClientRect(); const toggle = heading.querySelector('.hint').getBoundingClientRect(); const warningRect = warning.getBoundingClientRect(); const meta = document.querySelector('.category-form-meta'); const totals = [...meta.querySelectorAll(':scope > span')].map(node => node.getBoundingClientRect()); const period = meta.querySelector('.board-period-control').getBoundingClientRect(); const valid = toggle.top <= title.bottom && toggle.bottom >= title.top && warningRect.top >= Math.max(title.bottom, toggle.bottom) && totals.length === 1 && !meta.textContent.includes('Categorized:') && period.top <= totals[0].bottom && period.bottom >= totals[0].top && period.left >= totals[0].right; warning.remove(); return valid; })()"))
         assertEquals(0, evaluate(scenario, "document.querySelectorAll('[data-toggle-summary]').length"))
         assertEquals(true, evaluate(scenario, "(() => { const card = document.querySelector('.notes-card'); const heading = card.querySelector('h2').getBoundingClientRect(); const toggle = card.querySelector('[data-toggle-notes]'); const rect = toggle.getBoundingClientRect(); const editor = card.querySelector('textarea'); const original = editor.value; editor.value = '<b>Plain note</b>\\nSecond line'; editor.dispatchEvent(new Event('input',{bubbles:true})); toggle.click(); const preview = card.querySelector('.notes-preview'); const collapsed = editor.hidden && !preview.hidden && preview.textContent === editor.value && preview.children.length === 0 && getComputedStyle(preview).borderTopWidth === '0px' && currentState.app.isNotesOpen === false; toggle.click(); const expanded = !editor.hidden && preview.hidden && card.querySelector('textarea') === editor && editor.value === '<b>Plain note</b>\\nSecond line'; editor.value = original; editor.dispatchEvent(new Event('input',{bubbles:true})); return collapsed && expanded && rect.left >= heading.right && Math.abs(rect.right - card.querySelector('.section-heading').getBoundingClientRect().right) <= 1 && rect.top <= heading.bottom && !card.textContent.includes('Personal notes are saved'); })()"))
         evaluate(scenario, "window.originalFaqOpen = document.querySelector('.faq-card > details').open; document.querySelector('.faq-card > details').open = !window.originalFaqOpen;")
@@ -197,7 +234,7 @@ class BudgetAppTest {
         File(context.filesDir, "session.json").delete()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             waitFor(scenario, "window.budgetReady === true && Boolean(document.querySelector('[data-toggle-income]'))")
-            assertEquals("1.5.0", evaluate(scenario, "budget.APP_VERSION"))
+            assertEquals("1.6.0", evaluate(scenario, "budget.APP_VERSION"))
             assertEquals(false, evaluate(scenario, "currentState.app.isIncomeOpen"))
             assertEquals(true, evaluate(scenario, "document.querySelector('[data-add-income]').closest('.collapsible-body').hidden"))
             evaluate(scenario, "document.querySelector('[data-toggle-income]').click();")

@@ -4,11 +4,12 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-function setup(android) {
+function setup(android, language = "en-US") {
   const messages = [];
   const values = new Map();
   const events = [];
   const context = {
+    navigator: { language },
     window: {
       AndroidBudget: {
         postMessage: (value) => messages.push(JSON.parse(value)),
@@ -67,6 +68,37 @@ test("Android saves resolve only after native acknowledgement and surface failur
   const failed = platform.save("next");
   platform.receive({ id: messages[1].id, error: "Disk full" });
   await assert.rejects(failed, /Disk full/);
+});
+
+test("Android currency metadata comes from the native locale operation", async () => {
+  const { platform, messages } = setup(true);
+  const pending = platform.displayCurrency();
+  assert.equal(messages[0].operation, "displayCurrency");
+  platform.receive({ id: messages[0].id, value: { locale: "en-GB", currency: "GBP" } });
+  assert.deepEqual(await pending, { locale: "en-GB", currency: "GBP" });
+});
+
+test("browser currency follows explicit regions, inferred languages, and safe fallbacks", async () => {
+  for (const [language, currency] of [
+    ["en-US", "USD"],
+    ["en-GB", "GBP"],
+    ["fr-CA", "CAD"],
+    ["de-DE", "EUR"],
+    ["fr", "EUR"],
+    ["ja-JP", "JPY"],
+    ["bg-BG", "EUR"],
+    ["en-AU", "AUD"],
+    ["zh-Hant", "TWD"],
+    ["en-001", "USD"],
+    ["invalid_locale", "USD"],
+  ]) {
+    const { platform, messages } = setup(false, language);
+    assert.equal((await platform.displayCurrency()).currency, currency);
+    assert.equal(messages.length, 0);
+  }
+  const { platform, context } = setup(false, "en-GB");
+  context.Intl = { Locale: undefined };
+  assert.equal((await platform.displayCurrency()).currency, "USD");
 });
 
 test("canceled native file selection resolves without a payload", async () => {

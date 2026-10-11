@@ -356,6 +356,35 @@ test("money displays comma separators and two decimals without changing amounts"
   }
 });
 
+test("currency symbols follow locale without converting or modifying saved amounts", () => {
+  const budget = loadBudget();
+  const state = budget.createEmptyState();
+  state.expenses = [{
+    id: "cost",
+    name: "Cost",
+    categoryId: "default-needs",
+    amount: 1234.5,
+    multiplier: 1,
+    frequency: "monthly",
+    group: "",
+  }];
+  const saved = JSON.stringify(budget.createSavePayload(state));
+  for (const [locale, currency, symbol] of [
+    ["en-US", "USD", "$"],
+    ["en-GB", "GBP", "\u00a3"],
+    ["de-DE", "EUR", "\u20ac"],
+    ["ja-JP", "JPY", "\uffe5"],
+  ]) {
+    budget.setCurrencyDisplay(locale, currency);
+    assert.equal(budget.formatMoney(1234.5), `${symbol}1,234.50`);
+    assert.equal(budget.formatMoney(0), `${symbol}0.00`);
+    assert.equal(budget.formatMoney(-10), `${symbol}-10.00`);
+    assert.equal(budget.getBudgetSummary(state).monthlyExpenses, 1234.5);
+    assert.equal(JSON.parse(saved).expenses[0].amount, state.expenses[0].amount);
+  }
+  assert.throws(() => budget.setCurrencyDisplay("en-US", "invalid"), /Invalid currency code/);
+});
+
 test("desktop category row preference defaults to three and round trips valid choices", () => {
   const budget = loadBudget();
   const state = budget.createEmptyState();
@@ -373,6 +402,55 @@ test("desktop category row preference defaults to three and round trips valid ch
       () => budget.normalizeSaveState(state),
       /Invalid categories per row/,
     );
+  }
+});
+
+test("desktop column changes expose collapse mode without resetting saved preferences", () => {
+  const budget = loadBudget();
+  const state = budget.createEmptyState();
+  state.app.collapsedCategories["default-needs"] = true;
+  const main = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
+  const handler = main.slice(
+    main.indexOf('    layoutSelect.addEventListener("change"'),
+    main.indexOf("    layoutLabel.append(layoutSelect)"),
+  );
+  let change;
+  let columns;
+  const board = {
+    dataset: {},
+    style: {
+      setProperty: (_, value) => {
+        columns = value;
+      },
+    },
+  };
+  const layoutSelect = {
+    value: "3",
+    addEventListener: (_, callback) => {
+      change = callback;
+    },
+  };
+  const context = { window: { budget } };
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, "../src/app-template.js"), "utf8"),
+    context,
+  );
+  vm.runInNewContext(handler, { state, layoutSelect, board, saveState: () => {} });
+  for (const count of [1, 2, 3, 1]) {
+    layoutSelect.value = String(count);
+    change();
+    assert.equal(board.dataset.categoriesPerRow, String(count));
+    assert.equal(columns, count);
+    assert.equal(state.app.collapsedCategories["default-needs"], true);
+    const html = context.window.renderApp(
+      state,
+      budget.getBudgetSummary(state),
+      budget.sortCategories(state),
+      [],
+    );
+    assert.ok(html.includes(`data-categories-per-row="${count}"`));
+    assert.match(html, /Categories Total:/);
+    assert.doesNotMatch(html, /Categorized:/);
   }
 });
 
@@ -439,13 +517,17 @@ test("opening the app preserves section and group preferences and resets only In
     loadState: async () => state,
     render: (value) =>
       rendered.push([value.app.isIncomeOpen, value.app.boardPeriod]),
-    platform: { ready: async () => {} },
+    platform: {
+      displayCurrency: async () => ({ locale: "en-GB", currency: "GBP" }),
+      ready: async () => {},
+    },
   };
   await vm.runInNewContext(
     main.slice(main.indexOf("async function startApp()")),
     context,
   );
   assert.deepEqual(rendered, [[true, "annual"]]);
+  assert.equal(budget.formatMoney(10), "\u00a310.00");
   assert.deepEqual(plain(state.app.collapsedGroups), {
     "default-needs:Home": false,
     "default-needs:Home / Child": true,

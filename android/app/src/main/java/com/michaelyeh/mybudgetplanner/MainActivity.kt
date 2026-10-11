@@ -24,6 +24,7 @@ import androidx.webkit.WebViewFeature
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.util.Currency
 import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
@@ -187,6 +188,12 @@ class MainActivity : ComponentActivity() {
         val id = request.getString("id")
         val operation = request.getString("operation")
         when (operation) {
+            "displayCurrency" -> {
+                val locale = resources.configuration.locales[0]
+                val currency = runCatching { Currency.getInstance(locale)?.currencyCode }.getOrNull() ?: "USD"
+                val display = JSONObject().put("locale", locale.toLanguageTag()).put("currency", currency)
+                reply(result(id, operation).put("value", display))
+            }
             "ready" -> {
                 pageReady = true
                 reply(result(id, operation).put("value", true))

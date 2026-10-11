@@ -5,6 +5,7 @@ Read [shared behavior](implementation-shared.md) alongside this document. Androi
 ## Browser behavior
 
 - The page title and app header read My Budget Planner. The subtitle reads "My simple budget planner. Not a budget tracker." Android continues to omit the subtitle.
+- Browser currency symbols follow navigator.language on desktop and phone browsers. An explicit locale region determines the currency; language-only settings use Intl.Locale's likely region. A bundled region/currency table derived from Unicode CLDR 48, current as of 2026-10-11, keeps this offline and needs no location permissions or network requests. Unsupported regions, invalid language settings, or older browsers without Intl.Locale fall back to USD. Detection runs before rendering on each page load; only the symbol changes, without currency conversion or changes to saved amounts. Comma grouping and two decimals remain consistent.
 - The working budget is automatically saved in browser local storage. A brief Saved status is shown after persistence.
 - The header keeps Download Save File and Import Save File controls together at the top right.
 - The save help text explains that the budget is stored locally in the browser, recommends downloading a backup, and warns that importing overwrites current data.
@@ -15,6 +16,8 @@ Read [shared behavior](implementation-shared.md) alongside this document. Androi
 - Add Category follows the shared compact, centered bottom-row layout; opening it still creates the existing full category editor.
 - Category menus offer Edit, Color, and Remove; Color follows the shared picker behavior.
 - Budget Board offers a Categories Per Row selector on desktop with up to 1, 2, or 3 equal-width categories, defaulting to 3. Categories in an incomplete row expand equally to fill that row. The selection saves with the budget and changes layout without resetting open editor fields. Phone browsers retain one column and hide the selector.
+- Desktop Budget Board metadata places Categories Total on the left, Budget Period centered in the section, and Categories Per Row on the right. Equal outer columns keep the period centered regardless of the outer labels' widths; controls can wrap when space is limited.
+- Desktop shows category collapse controls when Categories Per Row is 1. They use the shared saved category preferences and hide only items, groups, and the add-item button. Switching to 2 or 3 shows all category contents and hides the controls without clearing collapse preferences; switching back to 1 reapplies them without resetting editors.
 - Hamburger and group collapse buttons are equal-width/height 32-pixel circles with 16-pixel icons. Phone browser layouts use 48-pixel touch targets around 36-pixel visible circles.
 - Edge indicators show the exact insertion location above or below categories, groups, normal items, and group members.
 - Dropping an item on a normal item or a group combines it into a group (creating a new group when necessary). Dropping a group on another group makes the moved group, including its descendants, a subgroup rather than merging both groups. Edge drops retain edge insertion behavior.
