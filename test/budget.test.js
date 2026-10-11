@@ -25,6 +25,128 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+test("backup controls retain accessible names and separate mobile icon markup", () => {
+  const budget = loadBudget();
+  const state = budget.createEmptyState();
+  const context = { window: { budget } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../src/app-template.js"), "utf8"), context);
+  const html = context.window.renderApp(state, budget.getBudgetSummary(state), state.categories, []);
+  assert.match(html, /data-download-save aria-label="Download Save File"/);
+  assert.equal((html.match(/class="backup-icon"/g) || []).length, 2);
+  assert.equal((html.match(/class="backup-label"/g) || []).length, 2);
+  assert.match(html, /class="button-like secondary" title="Import Save File"/);
+});
+
+test("income period selection calculates each frequency and round trips independently", () => {
+  const budget = loadBudget();
+  const state = budget.createEmptyState();
+  state.incomes = [{ id: "pay", name: "Pay", amount: 3000, frequency: "biweekly", notes: "" }];
+  assert.equal(state.app.incomePeriod, "monthly");
+  const context = { window: { budget } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../src/app-template.js"), "utf8"), context);
+  for (const [period] of budget.SUMMARY_PERIODS) {
+    state.app.incomePeriod = period;
+    const summary = budget.getBudgetSummary(state);
+    assertClose(summary.periods[period].income, budget.toPeriodAmount(3000, "biweekly", period));
+    const restored = budget.normalizeSaveState(plain(budget.createSavePayload(state)));
+    assert.equal(restored.app.incomePeriod, period);
+    assert.equal(restored.app.boardPeriod, "monthly");
+    assert.equal(restored.app.summaryPeriod, "monthly");
+    const html = context.window.renderApp(restored, summary, restored.categories, []);
+    assert.ok(html.includes(`data-income-total role="status">${budget.formatMoney(summary.periods[period].income)}</span>`));
+    assert.match(html, /aria-label="Net Income Period" data-income-period-select/);
+    assert.ok(html.match(/data-income-period-select>(.*?)<\/select>/)[1].includes(`value="${period}" selected`));
+  }
+  delete state.app.incomePeriod;
+  assert.equal(budget.normalizeSaveState(state).app.incomePeriod, "monthly");
+  for (const invalid of ["daily", "invalid", null, 1]) {
+    state.app.incomePeriod = invalid;
+    assert.throws(() => budget.normalizeSaveState(state), /Invalid income period/);
+  }
+});
+
+test("income period handler updates only the displayed total without rebuilding editors", () => {
+  const budget = loadBudget();
+  const state = budget.createEmptyState();
+  state.incomes = [{ id: "pay", name: "Pay", amount: 7254.27, frequency: "monthly", notes: "" }];
+  state.app.editingIncomeId = "pay";
+  const before = JSON.stringify(state.incomes);
+  const main = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
+  const amount = { textContent: "" };
+  let handler;
+  let saves = 0;
+  const context = {
+    state, budget,
+    document: { querySelector: (selector) => selector === "[data-income-total]" ? amount : selector === "[data-income-period-select]" ? { addEventListener: (_, callback) => { handler = callback; } } : null },
+    saveState: () => saves++,
+  };
+  vm.runInNewContext(main.slice(main.indexOf("function wireEvents(state) {"), main.indexOf('  if (state.app.expenseSort === "group")')) + "}\nwireEvents(state);", context);
+  for (const [period] of budget.SUMMARY_PERIODS) {
+    handler({ target: { value: period } });
+    assert.equal(amount.textContent, budget.formatMoney(budget.getBudgetSummary(state).periods[period].income));
+    assert.equal(state.app.incomePeriod, period);
+    assert.equal(state.app.editingIncomeId, "pay");
+    assert.equal(JSON.stringify(state.incomes), before);
+  }
+  assert.equal(saves, budget.SUMMARY_PERIODS.length);
+});
+
+test("income editors stay inside their entry cards in display and editing modes", () => {
+  const budget = loadBudget();
+  const state = budget.createEmptyState();
+  state.incomes = [{
+    id: "income-card", name: "Paycheck", amount: 1234.56,
+    frequency: "biweekly", notes: "My note",
+  }];
+  const context = { window: { budget } };
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, "../src/app-template.js"), "utf8"),
+    context,
+  );
+  for (const editing of [false, true]) {
+    state.app.editingIncomeId = editing ? "income-card" : "";
+    const html = context.window.renderApp(
+      state, budget.getBudgetSummary(state), state.categories, [],
+    );
+    const card = html.slice(html.indexOf('<div class="chip income-item">'), html.indexOf('<form id="category-form"'));
+    assert.match(card, /data-edit-income-form="income-card"\s*[^>]*>[\s\S]*?<\/form>\s*<\/div>/);
+    assert.equal(/data-edit-income-form="income-card"\s*hidden/.test(card), !editing);
+    assert.match(card, /name="amount"[^>]*value="1234.56"/);
+    assert.match(card, /My note/);
+    assert.doesNotMatch(html, /It does not track your spending\./);
+  }
+});
+
+test("money shortens only to fit, truncates compact decimals, and preserves exact values", () => {
+  const budget = loadBudget();
+  const fit = (amount, length) => budget.formatMoneyToFit(amount, (text) => text.length <= length);
+  assert.equal(fit(9999.99, 10), "$9,999.99");
+  assert.equal(fit(99999.99, 7), "$99.99k");
+  assert.equal(fit(999999.99, 8), "$999.99k");
+  assert.equal(fit(999999999.99, 8), "$999.99m");
+  assert.equal(fit(999999999999.99, 8), "$999.99b");
+  assert.equal(fit(-999999.99, 9), "$-999.99k");
+  assert.equal(fit(999999.99, 5), "$999k");
+  assert.equal(fit(0, 10), "$0.00");
+  assert.match(fit(1e100, 10), /e\+100/);
+  budget.setCurrencyDisplay("en-GB", "GBP");
+  assert.equal(fit(999999.99, 8), "\u00a3999.99k");
+  assert.equal(budget.formatMoney(999999.99), "\u00a3999,999.99");
+});
+
+test("item editors retain their card and do not expose group membership fields", () => {
+  const budget = loadBudget();
+  const state = budget.createEmptyState();
+  state.expenses.push({ id: "editor", name: "Member", amount: 1234.56, multiplier: 1, frequency: "monthly", categoryId: state.categories[0].id, group: "Parent / Child", sortOrder: 1 });
+  state.app.editingExpenseId = "editor";
+  const context = { window: { budget } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../src/app-template.js"), "utf8"), context);
+  const html = context.window.renderApp(state, budget.getBudgetSummary(state), state.categories, state.expenses);
+  assert.match(html, /class="expense-item" data-expense-id="editor">\s*<form class="expense-edit-form"/);
+  assert.doesNotMatch(html, /name="group"|Group \(optional\)/);
+  assert.equal(state.expenses[0].group, "Parent / Child");
+});
+
 test("category collapse preferences round trip, validate, and render accessible controls", () => {
   const budget = loadBudget();
   const state = budget.createEmptyState();

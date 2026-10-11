@@ -58,7 +58,6 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
         <input name="multiplier" type="number" min="1" step="1" value="1" placeholder="Qty" />
         <select name="frequency">${options("monthly")}</select>
       </div>
-      <input name="group" placeholder="Group (optional)" />
       <div class="actions">
         <button type="submit">Save</button>
         <button type="button" class="secondary" data-cancel-expense>Cancel</button>
@@ -79,8 +78,8 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
             <button class="ghost small-button" data-edit-income="${income.id}">Edit</button>
             <button class="ghost small-button" data-remove-income="${income.id}" aria-label="Delete ${escapeHtml(income.name)} Income" title="Delete Income">&times;</button>
           </div>
+          ${incomeEditor(income)}
         </div>
-        ${incomeEditor(income)}
       `,
     )
     .join("");
@@ -113,19 +112,20 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
         .map((item) => {
           if (state.app.editingExpenseId === item.id) {
             return `
-              <form class="expense-edit-form" data-edit-expense-form="${item.id}">
-                <input name="name" value="${escapeHtml(item.name)}" required />
-                <div class="field-row">
-                  <input name="amount" type="number" min="0" step="0.01" value="${item.amount}" required />
-                  <input name="multiplier" type="number" min="1" step="1" value="${item.multiplier || 1}" required />
-                  <select name="frequency">${options(item.frequency)}</select>
-                </div>
-                <input name="group" value="${escapeHtml(item.group)}" placeholder="Group (optional)" />
-                <div class="actions">
-                  <button type="submit">Save</button>
-                  <button type="button" class="secondary" data-cancel-edit-expense>Cancel</button>
-                </div>
-              </form>
+              <div class="expense-item" data-expense-id="${item.id}">
+                <form class="expense-edit-form" data-edit-expense-form="${item.id}">
+                  <input name="name" value="${escapeHtml(item.name)}" required />
+                  <div class="field-row">
+                    <input name="amount" type="number" min="0" step="0.01" value="${item.amount}" required />
+                    <input name="multiplier" type="number" min="1" step="1" value="${item.multiplier || 1}" required />
+                    <select name="frequency">${options(item.frequency)}</select>
+                  </div>
+                  <div class="actions">
+                    <button type="submit">Save</button>
+                    <button type="button" class="secondary" data-cancel-edit-expense>Cancel</button>
+                  </div>
+                </form>
+              </div>
             `;
           }
 
@@ -225,13 +225,13 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
     <header class="app-header">
       <div>
         <h1>My Budget Planner <span class="app-version">v${window.budget.APP_VERSION}</span></h1>
-        <p class="small">My simple budget planner. Not a budget tracker.</p>
+        <p class="small">My budget planner is designed to help you categorize your income.</p>
       </div>
       <div class="actions">
         <span class="save-status" data-save-status>${escapeHtml(saveMessage)}</span>
-        <button type="button" data-download-save>Download save file</button>
-        <label class="button-like secondary">
-          Import save file
+        <button type="button" data-download-save aria-label="Download Save File" title="Download Save File"><svg class="backup-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h11l3 3v4M3 3v18h9M7 3v6h6V3M7 21v-7h4M18 12v9m-4-4 4 4 4-4" /></svg><span class="backup-label">Download save file</span></button>
+        <label class="button-like secondary" title="Import Save File" aria-label="Import Save File">
+          <svg class="backup-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h11l3 3v4M3 3v18h9M7 3v6h6V3M7 21v-7h4M18 21v-9m-4 4 4-4 4 4" /></svg><span class="backup-label">Import save file</span>
           <input data-import-save type="file" accept="application/json,.json" />
         </label>
       </div>
@@ -242,7 +242,11 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
       <div class="collapsible-card">
         <div class="income-summary">
           <div class="summary-inline">
-            <span>${state.incomes.length || "No"} income source${state.incomes.length === 1 ? "" : "s"} &middot; ${money(summary.monthlyIncome)} / month</span>
+            <span class="income-total">
+              <span>${state.incomes.length || "No"} income source${state.incomes.length === 1 ? "" : "s"} &middot;</span>
+              <span data-income-total role="status">${money(summary.periods[state.app.incomePeriod].income)}</span> /
+              <select aria-label="Net Income Period" data-income-period-select>${periods.map(([key, label]) => `<option value="${key}" ${key === state.app.incomePeriod ? "selected" : ""}>${label}</option>`).join("")}</select>
+            </span>
             <button type="button" class="link-button hint" data-toggle-income>
               ${state.app.isIncomeOpen === false ? "click to expand" : "click to collapse"}
             </button>

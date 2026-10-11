@@ -20,6 +20,7 @@ let withinGroupDropMode = "";
 let crossCategoryDropMode = "";
 let categoryToFocus = "";
 let elementToScrollTo = "";
+let moneyObserver;
 const DELETE_CONFIRM_KEY = "MyBudgeter-delete-confirm-until";
 const GROUP_PATH_SEPARATOR = budget.GROUP_SEPARATOR;
 
@@ -50,9 +51,11 @@ function updateBoardPeriod(state) {
       category,
       state.app.boardPeriod,
     );
-    for (const [key, value] of Object.entries(metrics))
-      column.querySelector(`[data-category-${key}]`).textContent =
-        budget.formatMoney(value);
+    for (const [key, value] of Object.entries(metrics)) {
+      const element = column.querySelector(`[data-category-${key}]`);
+      element.textContent = budget.formatMoney(value);
+      delete element.dataset.fullAmountText;
+    }
   }
   document
     .querySelectorAll(".group-total[data-monthly-total]")
@@ -61,6 +64,7 @@ function updateBoardPeriod(state) {
         Number(total.dataset.monthlyTotal),
         state.app.boardPeriod,
       );
+      delete total.dataset.fullAmountText;
     });
   const compact = document
     .querySelector("[data-toggle-budget-board]")
@@ -69,6 +73,59 @@ function updateBoardPeriod(state) {
   const period = summary.periods[state.app.boardPeriod];
   if (compact)
     compact.textContent = `${state.categories.length} Categories · ${label} · Spending ${budget.formatMoney(period.expenses)} · Saving ${budget.formatMoney(period.savings)}`;
+  fitMoneyDisplays();
+}
+
+function fitMoneyDisplays() {
+  moneyObserver?.disconnect();
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  const targets = document.querySelectorAll(
+    ".column-metrics strong, .expense-item .item-name-row .small, .group-total[data-monthly-total]",
+  );
+  const fit = (element) => {
+    const full = element.dataset.fullAmountText || element.textContent;
+    element.dataset.fullAmountText = full;
+    element.title = full;
+    element.setAttribute("aria-label", full);
+    context.font = getComputedStyle(element).font;
+    const parent = element.parentElement;
+    const style = getComputedStyle(parent);
+    let width =
+      parent.clientWidth -
+      parseFloat(style.paddingLeft) -
+      parseFloat(style.paddingRight);
+    if (parent.matches(".item-group-header")) {
+      width -= [...parent.children]
+        .filter((child) => child !== element)
+        .reduce(
+          (total, child) => total + child.getBoundingClientRect().width + parseFloat(style.columnGap || 0),
+          0,
+        );
+    }
+    if (width <= 0) return;
+    const currency = budget.formatMoney(0).split("0")[0];
+    const amounts = [...full.matchAll(/-?\d[\d,]*\.\d{2}/g)];
+    const rest = full
+      .replaceAll(currency, "")
+      .replace(/-?\d[\d,]*\.\d{2}/g, "");
+    const available =
+      Math.max(width / 2, width - context.measureText(rest).width) /
+      Math.max(1, amounts.length);
+    element.textContent = full.replace(/-?\d[\d,]*\.\d{2}/g, (number) =>
+      budget
+        .formatMoneyToFit(
+          Number(number.replaceAll(",", "")),
+          (text) => context.measureText(text).width <= available,
+        )
+        .slice(currency.length),
+    );
+  };
+  if (typeof ResizeObserver !== "undefined") {
+    moneyObserver = new ResizeObserver(() => targets.forEach(fit));
+    targets.forEach((element) => moneyObserver.observe(element.parentElement));
+  }
+  targets.forEach(fit);
 }
 
 window.addEventListener("resize", () =>
@@ -616,6 +673,14 @@ function showSaved() {
 
 function render(state) {
   const scrollPosition = window.scrollY;
+  const mobile = platform.isAndroid || window.innerWidth <= 720;
+  const anchor = mobile
+    ? [...app.querySelectorAll(".expense-item")].find(
+        (element) => element.getBoundingClientRect().bottom > 0,
+      )
+    : null;
+  const anchorId = anchor?.dataset.expenseId;
+  const anchorTop = anchor?.getBoundingClientRect().top;
   currentState = state;
   app.innerHTML = window.renderApp(
     state,
@@ -639,9 +704,10 @@ function render(state) {
     categoryToFocus = "";
   }
   if (elementToScrollTo) {
-    document
-      .querySelector(elementToScrollTo)
-      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (!mobile)
+      document
+        .querySelector(elementToScrollTo)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
     elementToScrollTo = "";
   }
   state.categories.forEach((category) =>
@@ -651,9 +717,17 @@ function render(state) {
     ),
   );
   showStorageError();
-  window.scrollTo(0, scrollPosition);
   updateDragAvailability();
   window.dispatchEvent(new CustomEvent("budget-render", { detail: state }));
+  fitMoneyDisplays();
+  const restoredAnchor =
+    anchorId && app.querySelector(`[data-expense-id="${anchorId}"]`);
+  window.scrollTo(
+    0,
+    restoredAnchor
+      ? window.scrollY + restoredAnchor.getBoundingClientRect().top - anchorTop
+      : scrollPosition,
+  );
 }
 
 function hasOpenBudgetEditor() {
@@ -681,7 +755,6 @@ function formValues(form) {
     amount: Number(data.get("amount") || 0),
     multiplier: Math.max(0.01, Number(data.get("multiplier") || 1)),
     frequency: String(data.get("frequency") || "biweekly"),
-    group: String(data.get("group") || "").trim(),
   };
 }
 
@@ -696,6 +769,16 @@ function showFormError(form, message) {
 }
 
 function wireEvents(state) {
+  document
+    .querySelector("[data-income-period-select]")
+    ?.addEventListener("change", (event) => {
+      state.app.incomePeriod = event.target.value;
+      document.querySelector("[data-income-total]").textContent =
+        budget.formatMoney(
+          budget.getBudgetSummary(state).periods[state.app.incomePeriod].income,
+        );
+      saveState(state);
+    });
   document
     .querySelector("[data-summary-period-select]")
     ?.addEventListener("change", (event) => {
@@ -783,7 +866,7 @@ function wireEvents(state) {
   faqCard.className = "card faq-card";
   faqCard.innerHTML = `
     <details>
-      <summary><h2>FAQs Section</h2><span>click to expand</span></summary>
+      <summary class="section-heading"><h2>FAQs Section</h2><span class="link-button hint">click to expand</span></summary>
       <div class="faq-content">
         <details class="faq-question">
           <summary>How does MyBudgeter calculate my budget?</summary>
@@ -1108,7 +1191,6 @@ function wireEvents(state) {
                 multiplier: "Quantity",
                 frequency: "Frequency",
                 notes: "Notes",
-                group: "Group (Optional)",
                 percentage: "Budget Percentage",
                 name: "Name",
               }[field.name] || "Value";
@@ -1154,15 +1236,11 @@ function wireEvents(state) {
     const expense = state.expenses.find(
       (item) => item.id === row.dataset.expenseId,
     );
-    if (!expense || Number(expense.multiplier) === 1) return;
+    if (!expense || row.querySelector("form") || Number(expense.multiplier) === 1) return;
     const detail = row.querySelector(".small");
     if (detail)
       detail.textContent = `${formatCurrency(expense.amount)} × ${expense.multiplier} = ${formatCurrency(expense.amount * expense.multiplier)} / ${expense.frequency}`;
   });
-  if (state.app.addingExpenseGroup)
-    document.querySelector(".expense-form")?.elements.group &&
-      (document.querySelector(".expense-form").elements.group.value =
-        state.app.addingExpenseGroup);
   document.querySelectorAll("[data-edit-income-form]").forEach((form) =>
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -1245,6 +1323,7 @@ function wireEvents(state) {
         ...data,
         id: id(),
         categoryId: form.dataset.categoryId,
+        group: state.app.addingExpenseGroup || "",
         sortOrder: state.expenses.length + 1,
       });
       state.app.addingExpenseCategoryId = "";
@@ -1262,7 +1341,7 @@ function wireEvents(state) {
         (item) => item.id === form.dataset.editExpenseForm,
       );
       if (!expense) return;
-      Object.assign(expense, data);
+      Object.assign(expense, data, { group: expense.group });
       state.app.editingExpenseId = "";
       saveState(state);
       render(state);

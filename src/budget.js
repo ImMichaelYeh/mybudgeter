@@ -17,7 +17,7 @@ const SUMMARY_PERIODS = [
   ["quarterly", "Quarterly"],
   ["annual", "Annually"],
 ];
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.7.0";
 const SAVE_FILE_SCHEMA = `MyBudgeter-budget-v${APP_VERSION.split(".")[0]}`;
 const GROUP_SEPARATOR = " / ";
 const CATEGORY_COLORS = [
@@ -84,6 +84,7 @@ function createEmptyState() {
       categoriesPerRow: 3,
       summaryPeriod: "monthly",
       boardPeriod: "monthly",
+      incomePeriod: "monthly",
       isAddingCategory: false,
       editingCategoryId: "",
       draftCategoryId: "",
@@ -130,6 +131,31 @@ function formatMoney(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+function formatMoneyToFit(value, fits) {
+  const full = formatMoney(value);
+  if (fits(full)) return full;
+  const amount = Number(value || 0);
+  if (Math.abs(amount) < 1000) return full;
+  const suffixes = ["", "k", "m", "b", "t", "q", "Q"];
+  const magnitude = Math.min(
+    suffixes.length - 1,
+    Math.max(1, Math.floor(Math.log10(Math.abs(amount)) / 3)),
+  );
+  for (let scale = magnitude; scale < suffixes.length; scale++) {
+    const scaled = amount / 1000 ** scale;
+    if (Math.abs(scaled) >= 1000) continue;
+    if (Math.abs(scaled) < 0.01) break;
+    for (const precision of [2, 1, 0]) {
+      const factor = 10 ** precision;
+      const truncated = Math.trunc(scaled * factor) / factor;
+      if (truncated === 0) continue;
+      const text = `${currencySymbol}${truncated.toFixed(precision)}${suffixes[scale]}`;
+      if (fits(text)) return text;
+    }
+  }
+  return `${currencySymbol}${amount.toExponential(2)}`;
 }
 
 function setCategoryColor(state, categoryId, color) {
@@ -522,13 +548,13 @@ function validateSaveFields(value) {
     ![1, 2, 3].includes(value.app.categoriesPerRow)
   )
     throw new Error("Invalid categories per row");
-  for (const name of ["summaryPeriod", "boardPeriod"]) {
+  for (const name of ["summaryPeriod", "boardPeriod", "incomePeriod"]) {
     if (
       value.app?.[name] !== undefined &&
       !SUMMARY_PERIODS.some(([period]) => period === value.app[name])
     )
       throw new Error(
-        `Invalid ${name === "summaryPeriod" ? "summary" : "board"} period`,
+        `Invalid ${name.replace("Period", "")} period`,
       );
   }
   for (const name of [
@@ -765,6 +791,7 @@ window.budget = {
   createSeedState,
   createSavePayload,
   formatMoney,
+  formatMoneyToFit,
   setCurrencyDisplay,
   setCategoryColor,
   splitGroupPath,

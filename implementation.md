@@ -4,7 +4,7 @@ Read [shared behavior](implementation-shared.md) alongside this document. Androi
 
 ## Browser behavior
 
-- The page title and app header read My Budget Planner. The subtitle reads "My simple budget planner. Not a budget tracker." Android continues to omit the subtitle.
+- The page title and app header read My Budget Planner. The subtitle reads "My budget planner is designed to help you categorize your income." Android continues to omit the subtitle.
 - Browser currency symbols follow navigator.language on desktop and phone browsers. An explicit locale region determines the currency; language-only settings use Intl.Locale's likely region. A bundled region/currency table derived from Unicode CLDR 48, current as of 2026-10-11, keeps this offline and needs no location permissions or network requests. Unsupported regions, invalid language settings, or older browsers without Intl.Locale fall back to USD. Detection runs before rendering on each page load; only the symbol changes, without currency conversion or changes to saved amounts. Comma grouping and two decimals remain consistent.
 - The working budget is automatically saved in browser local storage. A brief Saved status is shown after persistence.
 - The header keeps Download Save File and Import Save File controls together at the top right.
@@ -35,3 +35,8 @@ Read [shared behavior](implementation-shared.md) alongside this document. Androi
 - At widths up to 720px, cards/forms stack vertically with 48px action targets, wrapping text, compact gutters, and no accumulating subgroup indentation. Desktop responsive category columns and all drag/drop handlers remain available.
 - Browser category editors retain their existing live draft autosave behavior.
 - Storage uses MyBudgeter-save-v1, with a 150ms save debounce and pending-save flushes on page hide/background.
+
+- Desktop Complete Summary centers its frequency dropdown without visible Period text, using equal outer columns to match Budget Board. The accessible name remains Complete Summary Period. Phone browsers retain the title-row selector.
+- Phone browser item creation/editing retains the visible item position and avoids automatic smooth scrolling; desktop new-item scrolling remains available.
+
+- Phone browsers use the compact title-row backup icons and version beneath the title, matching Android while retaining browser download/import behavior. Desktop keeps labeled backup buttons and the inline version.

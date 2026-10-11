@@ -5,7 +5,23 @@
   let initialized = !android;
   let checkpointValue = "";
 
+  function compactHeader() {
+    const header = document.querySelector(".app-header");
+    if (!header) return;
+    const actions = header.querySelector(".actions");
+    const help = header.querySelector(".save-help");
+    const status = header.querySelector("[data-save-status]");
+    const mobile = android || window.innerWidth <= 720;
+    if (help) (mobile ? header : actions).append(help);
+    if (status) {
+      if (mobile) header.querySelector(".app-version").append(status);
+      else actions.prepend(status);
+    }
+  }
+  window.addEventListener("resize", compactHeader);
+
   function enhance() {
+    compactHeader();
     document.querySelectorAll('input[type="number"]').forEach((input) => {
       input.inputMode = "decimal";
     });
@@ -57,7 +73,7 @@
     if (title) {
       title.firstChild.textContent = "My Budget Planner ";
       const status = document.querySelector("[data-save-status]");
-      if (status) title.append(status);
+      if (status) title.querySelector(".app-version").append(status);
     }
     document
       .querySelectorAll(
@@ -73,6 +89,7 @@
       });
     document.querySelectorAll("[draggable]").forEach((node) => {
       node.removeAttribute("draggable");
+      if (node.matches(".expense-item") && node.querySelector("form")) return;
       const category = node.closest("[data-category-id]")?.dataset.categoryId;
       let source;
       let actions;
@@ -110,7 +127,9 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "secondary";
-      button.textContent = "Import Save File";
+      button.innerHTML = file.closest("label").querySelector(".backup-icon").outerHTML + '<span class="backup-label">Import Save File</span>';
+      button.setAttribute("aria-label", "Import Save File");
+      button.title = "Import Save File";
       button.onclick = async () => {
         try {
           await importBudget(await platform.importFile());
@@ -125,20 +144,14 @@
       footer.textContent =
         "Having issues? Contact my.development.life@gmail.com";
     const exportButton = document.querySelector("[data-download-save]");
-    if (exportButton) exportButton.textContent = "Export Save File";
+    if (exportButton) {
+      exportButton.querySelector(".backup-label").textContent = "Export Save File";
+      exportButton.setAttribute("aria-label", "Export Save File");
+      exportButton.title = "Export Save File";
+    }
     document.querySelectorAll(".link-button.hint").forEach((button) => {
       button.textContent = button.textContent.replace(/click/gi, "Tap");
     });
-    const faq = document.querySelector(".faq-card > details");
-    if (faq) {
-      const updateFaq = () => {
-        faq.querySelector("summary span").textContent = faq.open
-          ? "Tap To Collapse"
-          : "Tap To Expand";
-      };
-      updateFaq();
-      faq.addEventListener("toggle", updateFaq);
-    }
     const help = document.querySelector(".save-help");
     if (help)
       help.textContent =
@@ -302,6 +315,7 @@
     dropTarget?.classList.remove("touch-drop");
     dropTarget?.removeAttribute("data-touch-drop");
     if (gesture?.active) dragStatus.textContent = "Drag finished.";
+    dragStatus.classList.remove("drag-status-visible");
     gesture = dropTarget = destination = null;
   }
 
@@ -348,6 +362,7 @@
     dropTarget?.classList.remove("touch-drop");
     dropTarget?.removeAttribute("data-touch-drop");
     dropTarget = destination = null;
+    dragStatus.textContent = "Move over a destination";
     const hit = document.elementFromPoint(gesture.x, gesture.y);
     const category = hit?.closest(".category-column");
     if (!category) return;
@@ -386,6 +401,23 @@
     dropTarget = node;
     node.dataset.touchDrop = candidate.placement;
     node.classList.add("touch-drop");
+    const operation = {
+      before: "Drop Before",
+      after: "Drop After",
+      swap: "Swap Categories",
+      append: "Move To Category",
+      combine: node.matches(".item-group") ? "Add To Group" : "Create Group",
+    }[candidate.placement];
+    const name = node.matches(".category-column")
+      ? currentState.categories.find(
+          (entry) => entry.id === category.dataset.categoryId,
+        )?.name
+      : node.matches(".item-group")
+        ? node.dataset.groupName
+        : currentState.expenses.find(
+            (entry) => entry.id === node.dataset.expenseId,
+          )?.name;
+    dragStatus.textContent = `${operation}: ${name}`;
   }
 
   function scrollDrag() {
@@ -472,6 +504,7 @@
         };
         holdTimer = setTimeout(() => {
           gesture.active = true;
+          dragStatus.classList.add("drag-status-visible");
           node.classList.add("touch-dragging");
           showDragPreview();
           dragStatus.textContent =

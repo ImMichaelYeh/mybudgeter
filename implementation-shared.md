@@ -5,7 +5,7 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 ## Application model and save compatibility
 
 - MyBudgeter is a client-side budgeting app with no server dependency.
-- A small semantic app version appears immediately after the platform app title. Android and browser use the same APP_VERSION; it stays unchanged during iteration until the preceding version is committed to GitHub or the user explicitly requests a bump.
+- A small semantic app version appears after the desktop app title and directly beneath the title on phone layouts. Android and browser use the same APP_VERSION; it stays unchanged during iteration until the preceding version is committed to GitHub or the user explicitly requests a bump.
 - Export creates a JSON backup of the full budget. Importing a save replaces the current budget after confirmation. Each file records the current semantic app version and a schema tied to its major version.
 - The exported state includes incomes, categories, items, notes, ordering, colors, grouping, collapse state, and relevant app preferences.
 - Normalization keeps older saves from the current major version usable and supplies defaults for newer fields. A new major version is reserved for a save-format change that cannot import earlier files; backwards-compatible product changes use a minor version and fixes or non-visible changes use a patch version.
@@ -16,6 +16,7 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 
 - Visible labels accompany form controls so their meaning remains clear even when a field already has a value.
 - Displayed currency amounts use comma thousands separators and two decimal places, including income, items, quantity calculations, groups, category metrics, and summaries. Browsers choose their currency symbol from browser language/region; Android uses the device's language-and-region locale, as documented in the platform references. This changes only the symbol, without exchange-rate conversion, changing numeric editor values, or changing saved amounts.
+- Category Budget, Spending/Saving, Remaining figures and item/group money summaries adapt to their available width: keep the full two-decimal amount when it fits, then use truncated compact k/m/b/t/q/Q suffixes (thousands through quintillions), with fewer compact decimals if necessary. Extremely large values use scientific notation. Full amounts remain in accessible labels and tooltips; calculations, editors, and backups retain exact values. Resizing and period changes refit the displays.
 - Titles and button labels use capitalized wording.
 - Save and Cancel controls use consistent themed colors that remain legible on every category color.
 - Income, category, item, and group actions are accessed through a named hamburger menu button. Browser menus offer Edit and Remove; Android adds Move for categories, items, and groups (income retains Edit/Remove). Menus close on selection, outside click, scrolling, resize, Escape, or Android Back. Arrow keys/Home/End navigate menu options; Escape/Back returns focus to the trigger. Remove actions ask for confirmation. The confirmation dialog offers a Do Not Ask Again For 5 Minutes option, stored for the current app session.
@@ -24,9 +25,9 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 ## Net Income
 
 - Net Income defaults to collapsed for new budgets and preserves its last saved expanded/collapsed state, including Android recreation/session recovery. Existing entries start in display mode, overriding saved edit identities; expanding Income does not automatically enter edit mode. Choose Edit from an entry's hamburger menu to open its editor. Recovered Android income drafts remain hidden until Edit is chosen. Users can expand or collapse Income during the current session without losing active form fields. Its heading has an expand/collapse control beside its income summary, wrapping on narrow screens.
-- The collapsed summary shows the number of income sources and normalized monthly income.
+- The income summary shows the number of income sources and total for its selected period, with a dropdown directly after the amount's slash. Weekly, Biweekly, Semi-monthly, Monthly, Quarterly, and Annually use the existing normalized income calculations. Monthly is the default for new/older budgets; the selection saves independently of Budget Board and Complete Summary, including backups and Android recovery. The selector remains available with Income collapsed or expanded. Changing it updates only this displayed total and preserves income recurrence settings and open editor fields.
 - Add Income appears after the last income item and creates a new editable income item.
-- The income edit form has labeled Income Source, Amount, Frequency, and Notes fields.
+- The income edit form has labeled Income Source, Amount, Frequency, and Notes fields. It opens inside the existing income entry card beneath its display summary and actions, using the full card width on both platforms. Save and Cancel retain their existing behavior.
 - Income frequency defaults to Biweekly. Semi-monthly is available for two payments each month. Per Paycheck is not offered because it does not state an actual recurrence interval.
 - Saving updates the compact income item and hides its edit form. Cancelling a newly added item removes it.
 - Each saved income item shows its name, amount, period, and, when present, `Note: ` followed by its note. Items can be edited or removed.
@@ -57,13 +58,13 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 ## Expenses, savings, quantities, and frequencies
 
 - Add Expense and Add Savings appear after the last item in the selected category and create a new item there. Group Add Item creates an item in that group. These actions use centered circular buttons with a geometrically centered 16-pixel plus icon, matching the translucent background, inherited color, and size of collapse/hamburger controls: 32 pixels on desktop and a visible 36-pixel circle within a 48-pixel phone touch target. Accessible labels and tooltips identify the action; group labels include their full path.
-- Newly added items are scrolled into view, including when the action occurs lower than the visible viewport.
-- An item can be edited to set Name, Amount, Quantity, Period Frequency, and optional Group.
+- Desktop newly added items are scrolled into view. Phone browsers and Android preserve the visible item position when creating or editing items.
+- Item editors set Name, Amount, Quantity, and Period Frequency. Group membership is maintained by drag/drop or Move rather than a manual field. Editors remain inside their original bordered item card, including inside nested groups.
 - Expense and savings items can be created or edited with an amount of $0.00. Amount remains required; negative and non-finite amounts are rejected. Zero-value items persist in backups and contribute zero to totals.
 - Quantity accepts decimal values for prorated recurring costs, such as quantity 0.5 for a cost that occurs every two years but is entered as annual.
 - The quantity spinner and arrow keys move in whole-number increments. Arrow Up rounds to the next whole number and Arrow Down rounds to the prior whole number, with a minimum of 1 for those controls.
 - When quantity differs from 1, an item shows the calculation: single item cost × quantity = total, followed by its period frequency.
-- Items omit group-path tags; their surrounding group/subgroup cards communicate membership. Amount/frequency summaries follow the name inline on the same row, wrapping only when needed. Group paths remain available in editors and Move destinations, and hiding tags does not change saved membership.
+- Items omit group-path tags; their surrounding group/subgroup cards communicate membership. Amount/frequency summaries follow the name inline on the same row, wrapping only when needed. Group paths remain available in Move destinations, and hiding tags does not change saved membership.
 - Item summaries show amount / frequency without a percentage. Group and subgroup summaries show their normalized total and frequency matching Budget Period (for example, $500.00 / Semi-monthly), without a percentage. Existing quantity calculations remain visible when quantity differs from 1.
 - Items use the available recurrence frequencies, including Semi-monthly, and all calculations normalize them to monthly amounts for comparison and summaries.
 
@@ -78,7 +79,7 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 - Each item inside a group has its own inset, rounded, bordered box with a subtle background, matching subgroup styling while keeping the item name, details, and menu together.
 - A collapsed group shows only its identity and selected-period total.
 - Groups and subgroups at every depth preserve their last saved expanded or collapsed state on browser page reloads and Android launch/recreation, including session recovery. Groups without a saved preference start expanded. Moving or editing entries does not automatically reset their collapse state. Recovered form fields inside collapsed groups are retained for later expansion.
-- Editing a group name renames every item in that group and all of its subgroups. Editing an individual item’s group changes only that item, allowing it to leave or enter a group.
+- Editing a group name renames every item in that group and all of its subgroups. Moving an individual item changes only its membership, allowing it to leave or enter a group.
 - Groups retain one Add Item button at the bottom, hidden when collapsed; Add Subgroup is not offered. Dropping an item in the center of another group member creates a named subgroup under the destination member's group, retaining both items and other siblings. Edge drops retain ordering. Deleting a parent group removes all descendants.
 - Groups and individual items can be reordered manually. Groups can be moved alongside regular items, including above or below them.
 - While an income, category, item, or group editor is open, card dragging and reordering are disabled so editor text can be selected normally. Save or cancel editing to resume organization; Android Move asks users to finish editing first. Notes does not disable organization.
@@ -90,7 +91,7 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 - Each period card shows Income, Savings, Uncategorized, Total Unspent, and Total Spent.
 - On desktop, the selected period's five totals appear as individual boxes with centered labels above values and fill the available width horizontally. Phone browsers and Android show five plain rows with labels on the left, values on the right, and subtle line separators. Total Unspent stays green and Total Spent stays red.
 - The period is shown only in the selector; no repeated period heading appears above the total boxes.
-- On phone browsers and Android, the dropdown sits on the same row as the Complete Summary title and omits the visible Period label. Its accessible name remains Complete Summary Period; long titles wrap within their available column. Desktop retains the Period label.
+- Complete Summary omits the visible Period label on both platforms; the dropdown retains its accessible name Complete Summary Period. On phone browsers and Android, it sits on the same row as the title; long titles wrap within their available column. Desktop keeps the dropdown centered in the section.
 - Uncategorized replaces the former Remaining wording in this section.
 - Total Unspent includes both Savings and Uncategorized amounts.
 - Total Spent is shown below Total Unspent and uses red styling.
@@ -104,7 +105,7 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 
 ## FAQs Section
 
-- The heading reads FAQs Section on both platforms. It is the bottom section above the footer, defaults to collapsed for new budgets, and preserves its saved section state. Each detailed question is also collapsed by default and explains budget calculations, frequency calculations, available budgeting features, local save-file behavior and privacy, and unsupported capabilities including bank connections, automatic transaction imports, cloud sync, and shared budgets.
+- The heading reads FAQs Section on both platforms, using the shared section-heading and hint styles so title and expand/collapse typography, weight, color, and spacing match the other sections. It is the bottom section above the footer, defaults to collapsed for new budgets, and preserves its saved section state. Each detailed question is also collapsed by default and explains budget calculations, frequency calculations, available budgeting features, local save-file behavior and privacy, and unsupported capabilities including bank connections, automatic transaction imports, cloud sync, and shared budgets.
 
 ## Source structure
 
