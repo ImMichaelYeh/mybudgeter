@@ -1,0 +1,32 @@
+:root { --site-nav-content-width: 1600px; }
+
+.site-header { background: #071c35; }
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  min-height: 72px;
+  width: 100%;
+  margin: 0;
+  padding: 1rem max(2rem, calc((100vw - var(--site-nav-content-width)) / 2 + 2rem));
+  background: #071c35;
+}
+
+.site-brand {
+  margin: 0;
+  color: #fff;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: normal;
+  text-decoration: none;
+  transform: none;
+}
+
+.portfolio-links { display: flex; flex-wrap: wrap; margin-left: 1.75rem; }
+
+@media (max-width: 575.98px) {
+  .site-nav { align-items: flex-start; flex-direction: column; gap: .5rem; padding: 1rem 1.25rem; }
+  .portfolio-links { margin-left: 0; }
+}

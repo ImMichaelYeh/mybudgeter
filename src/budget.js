@@ -9,7 +9,15 @@ const FREQUENCY_OPTIONS = [
 ];
 
 const DEFAULT_PAYCHECKS_PER_MONTH = 2;
-const APP_VERSION = "1.1.0";
+const SUMMARY_PERIODS = [
+  ["weekly", "Weekly"],
+  ["biweekly", "Biweekly"],
+  ["semi-monthly", "Semi-monthly"],
+  ["monthly", "Monthly"],
+  ["quarterly", "Quarterly"],
+  ["annual", "Annually"],
+];
+const APP_VERSION = "1.5.0";
 const SAVE_FILE_SCHEMA = `MyBudgeter-budget-v${APP_VERSION.split(".")[0]}`;
 const GROUP_SEPARATOR = " / ";
 const CATEGORY_COLORS = [
@@ -67,9 +75,15 @@ function createEmptyState() {
       expenseSort: "manual",
       expenseSorts: {},
       collapsedGroups: {},
+      collapsedCategories: {},
       categoryMessage: "",
-      isIncomeOpen: true,
+      isIncomeOpen: false,
       isBudgetBoardOpen: true,
+      isNotesOpen: true,
+      isFaqOpen: false,
+      categoriesPerRow: 3,
+      summaryPeriod: "monthly",
+      boardPeriod: "monthly",
       isAddingCategory: false,
       editingCategoryId: "",
       draftCategoryId: "",
@@ -97,6 +111,20 @@ function createSavePayload(state) {
     schema: SAVE_FILE_SCHEMA,
     exportedAt: new Date().toISOString(),
   };
+}
+
+function formatMoney(value) {
+  return `$${Number(value || 0).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function setCategoryColor(state, categoryId, color) {
+  const category = state.categories.find((entry) => entry.id === categoryId);
+  if (!category || !/^#[0-9a-f]{6}$/i.test(color)) return false;
+  category.color = color.toLowerCase();
+  return true;
 }
 
 function splitGroupPath(group) {
@@ -198,13 +226,10 @@ function toPeriodAmount(
       monthly: monthlyAmount,
       weekly: monthlyAmount / 4.34524,
       biweekly: monthlyAmount / 2.17262,
+      "semi-monthly": monthlyAmount / 2,
       "per-paycheck": monthlyAmount / paychecksPerMonth,
     }[period] ?? monthlyAmount
   );
-}
-
-function getCategorySharePercent(amount, categoryTotal) {
-  return categoryTotal ? (amount / categoryTotal) * 100 : 0;
 }
 
 function getBudgetSummary(state) {
@@ -271,13 +296,7 @@ function getBudgetSummary(state) {
       usagePercent: monthlyTarget ? (monthlySpent / monthlyTarget) * 100 : 0,
     };
   });
-  const periods = [
-    "weekly",
-    "biweekly",
-    "monthly",
-    "quarterly",
-    "annual",
-  ].reduce((result, period) => {
+  const periods = SUMMARY_PERIODS.reduce((result, [period]) => {
     const income = state.incomes.reduce(
       (sum, item) =>
         sum +
@@ -346,6 +365,19 @@ function getCategoryPercentageTotal(state) {
   );
 }
 
+function getCategoryPeriodMetrics(category, period) {
+  return {
+    target: toPeriodAmount(category.monthlyTarget, "monthly", period),
+    spent: toPeriodAmount(category.monthlySpent, "monthly", period),
+    remaining: toPeriodAmount(category.monthlyRemaining, "monthly", period),
+  };
+}
+
+function formatGroupTotal(monthlyTotal, period) {
+  const label = SUMMARY_PERIODS.find(([key]) => key === period)[1];
+  return `${formatMoney(toPeriodAmount(monthlyTotal, "monthly", period))} / ${label}`;
+}
+
 function sortCategories(state) {
   const sorted = [...state.categories];
   sorted.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
@@ -377,6 +409,9 @@ function normalizeSaveState(value) {
   ) {
     throw new Error("Unsupported save file");
   }
+  validateSaveFields(value);
+  const savedApp = { ...value.app };
+  delete savedApp.isSummaryOpen;
   return {
     ...base,
     ...value,
@@ -384,7 +419,7 @@ function normalizeSaveState(value) {
     schema: SAVE_FILE_SCHEMA,
     app: {
       ...base.app,
-      ...(value.app || {}),
+      ...savedApp,
       isAddingCategory: false,
       categorySort: "manual",
       expenseSort: "manual",
@@ -412,25 +447,326 @@ function normalizeSaveState(value) {
   };
 }
 
+function validateSaveFields(value) {
+  const validId = (id) => typeof id === "string" && /^[a-zA-Z0-9_-]+$/.test(id);
+  const numeric = (number) =>
+    (typeof number === "number" || typeof number === "string") &&
+    Number.isFinite(Number(number)) &&
+    Number(number) >= 0;
+  const collapsedCategories = value.app?.collapsedCategories;
+  if (
+    collapsedCategories !== undefined &&
+    (!collapsedCategories ||
+      typeof collapsedCategories !== "object" ||
+      Array.isArray(collapsedCategories) ||
+      Object.entries(collapsedCategories).some(
+        ([id, collapsed]) => !validId(id) || typeof collapsed !== "boolean",
+      ))
+  )
+    throw new Error("Invalid category collapse preferences");
+  for (const key of ["incomes", "categories", "expenses"]) {
+    if (value[key] !== undefined && !Array.isArray(value[key]))
+      throw new Error(`Invalid ${key} list`);
+    const ids = new Set();
+    for (const entry of value[key] || []) {
+      if (!entry || !validId(entry.id) || ids.has(entry.id))
+        throw new Error(`Invalid or duplicate ${key} ID`);
+      ids.add(entry.id);
+      for (const name of ["name", "notes", "group", "color"]) {
+        if (entry[name] !== undefined && typeof entry[name] !== "string")
+          throw new Error(`Invalid ${name}`);
+      }
+      for (const name of ["amount", "percentage", "multiplier", "sortOrder"]) {
+        if (entry[name] !== undefined && !numeric(entry[name]))
+          throw new Error(`Invalid ${name}`);
+      }
+      if (entry.categoryId !== undefined && !validId(entry.categoryId))
+        throw new Error("Invalid category reference");
+      if (
+        entry.frequency !== undefined &&
+        !Object.hasOwn(MONTHLY_FACTORS, entry.frequency)
+      )
+        throw new Error("Invalid frequency");
+    }
+  }
+  if (value.notes !== undefined && typeof value.notes !== "string")
+    throw new Error("Invalid notes");
+  if (
+    value.app !== undefined &&
+    (!value.app || typeof value.app !== "object" || Array.isArray(value.app))
+  )
+    throw new Error("Invalid app preferences");
+  for (const name of [
+    "isIncomeOpen",
+    "isBudgetBoardOpen",
+    "isNotesOpen",
+    "isFaqOpen",
+  ]) {
+    if (value.app?.[name] !== undefined && typeof value.app[name] !== "boolean")
+      throw new Error("Invalid section collapse preference");
+  }
+  if (
+    value.app?.categoriesPerRow !== undefined &&
+    ![1, 2, 3].includes(value.app.categoriesPerRow)
+  )
+    throw new Error("Invalid categories per row");
+  for (const name of ["summaryPeriod", "boardPeriod"]) {
+    if (
+      value.app?.[name] !== undefined &&
+      !SUMMARY_PERIODS.some(([period]) => period === value.app[name])
+    )
+      throw new Error(
+        `Invalid ${name === "summaryPeriod" ? "summary" : "board"} period`,
+      );
+  }
+  for (const name of [
+    "editingCategoryId",
+    "draftCategoryId",
+    "editingIncomeId",
+    "draftIncomeId",
+    "addingExpenseCategoryId",
+    "editingExpenseId",
+  ]) {
+    const id = value.app?.[name];
+    if (id && !validId(id)) throw new Error("Invalid editor reference");
+  }
+  if (
+    value.app?.collapsedGroups !== undefined &&
+    (!value.app.collapsedGroups ||
+      typeof value.app.collapsedGroups !== "object" ||
+      Array.isArray(value.app.collapsedGroups))
+  )
+    throw new Error("Invalid group preferences");
+}
+
+function organizationTree(state, categoryId) {
+  const root = { type: "root", group: "", children: [] };
+  for (const expense of sortExpenses(
+    state.expenses.filter((item) => item.categoryId === categoryId),
+  )) {
+    let parent = root;
+    let path = "";
+    for (const name of splitGroupPath(expense.group)) {
+      path = path ? `${path}${GROUP_SEPARATOR}${name}` : name;
+      let node = parent.children.find(
+        (child) => child.type === "group" && child.group === path,
+      );
+      if (!node) {
+        node = { type: "group", group: path, children: [] };
+        parent.children.push(node);
+      }
+      parent = node;
+    }
+    parent.children.push({ type: "item", id: expense.id, expense });
+  }
+  return root;
+}
+
+function findOrganizationNode(parent, target) {
+  for (const node of parent.children) {
+    if (
+      node.type === target.type &&
+      (node.type === "item"
+        ? node.id === target.id
+        : node.group === target.group)
+    ) {
+      return { parent, node };
+    }
+    if (node.children) {
+      const found = findOrganizationNode(node, target);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function getOrganizationTargets(state, categoryId) {
+  const targets = [];
+  const visit = (parent) => {
+    for (const node of parent.children) {
+      targets.push(
+        node.type === "group"
+          ? { type: "group", group: node.group, label: node.group }
+          : {
+              type: "item",
+              id: node.id,
+              group: parent.group,
+              label: `${parent.group ? `${parent.group}${GROUP_SEPARATOR}` : ""}${node.expense.name}`,
+            },
+      );
+      if (node.children) visit(node);
+    }
+  };
+  visit(organizationTree(state, categoryId));
+  return targets;
+}
+
+function moveBudgetEntry(state, source, destination) {
+  if (source.type === "category") {
+    const categories = sortCategories(state);
+    const from = categories.findIndex((category) => category.id === source.id);
+    const to = categories.findIndex(
+      (category) => category.id === destination.categoryId,
+    );
+    if (
+      from < 0 ||
+      to < 0 ||
+      from === to ||
+      !["before", "after", "swap"].includes(destination.placement)
+    )
+      return false;
+    if (destination.placement === "swap")
+      [categories[from], categories[to]] = [categories[to], categories[from]];
+    else {
+      const [category] = categories.splice(from, 1);
+      const index = categories.findIndex(
+        (item) => item.id === destination.categoryId,
+      );
+      categories.splice(
+        index + (destination.placement === "after" ? 1 : 0),
+        0,
+        category,
+      );
+    }
+    categories.forEach((category, index) => {
+      category.sortOrder = index + 1;
+    });
+    return true;
+  }
+  if (
+    !state.categories.some((category) => category.id === source.categoryId) ||
+    !state.categories.some(
+      (category) => category.id === destination.categoryId,
+    ) ||
+    !["append", "before", "after", "combine"].includes(destination.placement)
+  )
+    return false;
+  const sourceRoot = organizationTree(state, source.categoryId);
+  const destinationRoot =
+    source.categoryId === destination.categoryId
+      ? sourceRoot
+      : organizationTree(state, destination.categoryId);
+  const found = findOrganizationNode(sourceRoot, source);
+  if (!found) return false;
+  const target = destination.target
+    ? findOrganizationNode(destinationRoot, destination.target)
+    : null;
+  let parent = destination.group
+    ? findOrganizationNode(destinationRoot, {
+        type: "group",
+        group: destination.group,
+      })?.node
+    : destinationRoot;
+  if (destination.placement !== "append") {
+    if (!target) return false;
+    parent =
+      destination.placement === "combine" && target.node.type === "group"
+        ? target.node
+        : target.parent;
+  }
+  if (!parent || target?.node === found.node) return false;
+  if (
+    source.type === "group" &&
+    source.categoryId === destination.categoryId &&
+    (isGroupOrDescendant(parent.group, source.group) ||
+      (target?.node.type === "group" &&
+        isGroupOrDescendant(target.node.group, source.group)))
+  )
+    return false;
+
+  found.parent.children.splice(found.parent.children.indexOf(found.node), 1);
+  if (destination.placement === "combine" && target.node.type === "item") {
+    let number = 1;
+    let name;
+    const existing = getOrganizationTargets(
+      state,
+      destination.categoryId,
+    ).filter((entry) => entry.type === "group");
+    do {
+      name = `${parent.group ? `${parent.group}${GROUP_SEPARATOR}` : ""}New Group ${number++}`;
+    } while (existing.some((entry) => entry.group === name));
+    const group = {
+      type: "group",
+      group: name,
+      children: [target.node, found.node],
+    };
+    parent.children.splice(parent.children.indexOf(target.node), 1, group);
+  } else {
+    const index =
+      destination.placement === "append" || destination.placement === "combine"
+        ? parent.children.length
+        : parent.children.indexOf(target.node) +
+          (destination.placement === "after" ? 1 : 0);
+    parent.children.splice(index, 0, found.node);
+  }
+
+  const oldGroup = source.type === "group" ? source.group : "";
+  const collapsed = { ...(state.app.collapsedGroups || {}) };
+  const flatten = (root, categoryId) => {
+    let order = 0;
+    const visit = (parent, group) => {
+      for (const node of parent.children) {
+        if (node.type === "item") {
+          node.expense.categoryId = categoryId;
+          node.expense.group = group;
+          node.expense.sortOrder = ++order;
+        } else {
+          const path = group
+            ? `${group}${GROUP_SEPARATOR}${splitGroupPath(node.group).at(-1)}`
+            : splitGroupPath(node.group).at(-1);
+          if (oldGroup && node === found.node) {
+            for (const [key, value] of Object.entries(collapsed)) {
+              const prefix = `${source.categoryId}:`;
+              const oldPath = key.slice(prefix.length);
+              if (
+                key.startsWith(prefix) &&
+                isGroupOrDescendant(oldPath, oldGroup)
+              ) {
+                delete state.app.collapsedGroups[key];
+                state.app.collapsedGroups[
+                  `${categoryId}:${path}${oldPath.slice(oldGroup.length)}`
+                ] = value;
+              }
+            }
+          }
+          visit(node, path);
+        }
+      }
+    };
+    visit(root, "");
+  };
+  state.app.collapsedGroups ||= {};
+  flatten(sourceRoot, source.categoryId);
+  if (sourceRoot !== destinationRoot)
+    flatten(destinationRoot, destination.categoryId);
+  return true;
+}
+
 window.budget = {
   APP_VERSION,
   SAVE_FILE_SCHEMA,
   FREQUENCY_OPTIONS,
+  SUMMARY_PERIODS,
   CATEGORY_COLORS,
   GROUP_SEPARATOR,
   createEmptyState,
   createSeedState,
   createSavePayload,
+  formatMoney,
+  setCategoryColor,
   splitGroupPath,
   isGroupOrDescendant,
   moveGroupIntoGroup,
   moveGroupToCategory,
   normalizeToMonthly,
   toPeriodAmount,
-  getCategorySharePercent,
   getBudgetSummary,
   getCategoryPercentageTotal,
+  getCategoryPeriodMetrics,
+  formatGroupTotal,
   sortCategories,
   sortExpenses,
   normalizeSaveState,
+  getOrganizationTargets,
+  moveBudgetEntry,
 };

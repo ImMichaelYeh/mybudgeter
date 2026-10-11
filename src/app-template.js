@@ -1,5 +1,5 @@
 function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
-  const money = (value) => `$${Number(value || 0).toFixed(2)}`;
+  const money = window.budget.formatMoney;
   const escapeHtml = (value) =>
     String(value ?? "").replace(
       /[&<>"']/g,
@@ -21,13 +21,7 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
     "#dc2626",
     "#0891b2",
   ];
-  const periods = [
-    ["weekly", "Weekly"],
-    ["biweekly", "Biweekly"],
-    ["monthly", "Monthly"],
-    ["quarterly", "Quarterly"],
-    ["annual", "Annual"],
-  ];
+  const periods = window.budget.SUMMARY_PERIODS;
 
   const options = (selected) =>
     frequencyOptions
@@ -83,7 +77,7 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
           </div>
           <div class="actions">
             <button class="ghost small-button" data-edit-income="${income.id}">Edit</button>
-            <button class="ghost small-button" data-remove-income="${income.id}">Remove</button>
+            <button class="ghost small-button" data-remove-income="${income.id}" aria-label="Delete ${escapeHtml(income.name)} Income" title="Delete Income">&times;</button>
           </div>
         </div>
         ${incomeEditor(income)}
@@ -93,7 +87,12 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
 
   const board = categories
     .map((category, index) => {
+      const isCollapsed = state.app.collapsedCategories?.[category.id] === true;
       const detail = summary.categories.find((item) => item.id === category.id);
+      const metrics = window.budget.getCategoryPeriodMetrics(
+        detail,
+        state.app.boardPeriod,
+      );
       const usage = detail?.usagePercent || 0;
       const progressColor = category.isSavings
         ? usage >= 90
@@ -130,26 +129,16 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
             `;
           }
 
-          const monthlyAmount = window.budget.normalizeToMonthly(
-            item.amount * (item.multiplier || 1),
-            item.frequency,
-            state.app.paychecksPerMonth,
-          );
-          const categoryShare = window.budget.getCategorySharePercent(
-            monthlyAmount,
-            detail?.monthlyTarget,
-          );
-
           return `
             <div class="expense-item" draggable="true" data-expense-id="${item.id}">
               <div>
-                <strong>${escapeHtml(item.name)}</strong>
-                <div class="small">
-                  ${money(item.amount * (item.multiplier || 1))} &middot; ${escapeHtml(item.frequency)}
-                  ${item.multiplier > 1 ? `&middot; &times;${item.multiplier}` : ""}
-                  &middot; ${categoryShare.toFixed(1)}%
+                <div class="item-name-row">
+                  <strong>${escapeHtml(item.name)}</strong>
+                  <span class="small">
+                    ${money(item.amount * (item.multiplier || 1))} / ${escapeHtml(item.frequency)}
+                    ${item.multiplier > 1 ? `&middot; &times;${item.multiplier}` : ""}
+                  </span>
                 </div>
-                ${item.group ? `<div class="tag">${escapeHtml(item.group)}</div>` : ""}
               </div>
               <div class="actions">
                 <button class="ghost small-button" data-edit-expense="${item.id}">Edit</button>
@@ -162,25 +151,27 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
 
       return `
         <article
-          class="category-column"
+          class="category-column ${isCollapsed ? "category-collapsed" : ""}"
           draggable="true"
           data-category-id="${category.id}"
           style="--accent:${accentColors[index % accentColors.length]};--column-percent:${Math.max(10, category.percentage)}"
         >
           <div class="column-header">
+            <button type="button" class="ghost small-button group-toggle category-toggle" data-toggle-category="${category.id}" aria-expanded="${!isCollapsed}" aria-label="${isCollapsed ? "Expand" : "Collapse"} ${escapeHtml(category.name)} Category" title="${isCollapsed ? "Expand" : "Collapse"} Category"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${isCollapsed ? "m9 18 6-6-6-6" : "m6 9 6 6 6-6"}" /></svg></button>
             <div>
               <h3>${escapeHtml(category.name)}</h3>
               <p>${category.percentage}% &middot; ${category.isSavings ? "Savings" : "Expenses"}</p>
             </div>
             <div class="actions">
               <button class="ghost small-button" data-edit-category="${category.id}">Edit</button>
-              <button class="ghost small-button" data-remove-category="${category.id}">Remove</button>
+              <button class="ghost small-button" data-color-category="${category.id}">Color</button>
+              <button class="ghost small-button" data-remove-category="${category.id}" aria-label="Delete ${escapeHtml(category.name)} Category" title="Delete Category">&times;</button>
             </div>
           </div>
           <div class="column-metrics">
-            <div><span>Monthly Target</span><strong>${money(detail?.monthlyTarget)}</strong></div>
-            <div><span>${category.isSavings ? "Monthly Savings" : "Monthly Spending"}</span><strong>${money(detail?.monthlySpent)}</strong></div>
-            <div><span>Remaining</span><strong>${money(detail?.monthlyRemaining)}</strong></div>
+            <div><span data-target-label>Budget</span><strong data-category-target>${money(metrics.target)}</strong></div>
+            <div><span>${category.isSavings ? "Saving" : "Spending"}</span><strong data-category-spent>${money(metrics.spent)}</strong></div>
+            <div><span>Remaining</span><strong data-category-remaining>${money(metrics.remaining)}</strong></div>
           </div>
           <div class="progress-bar ${progressColor}"><span style="width:${Math.min(100, usage)}%"></span></div>
           <div class="expense-list">
@@ -188,7 +179,7 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
             ${
               state.app.addingExpenseCategoryId === category.id
                 ? addItemForm(category)
-                : `<button type="button" class="expense-add-button" data-show-expense-form="${category.id}">${category.isSavings ? "Add savings" : "Add expense"}</button>`
+                : `<button type="button" class="ghost expense-add-button" data-show-expense-form="${category.id}" aria-label="${category.isSavings ? "Add Savings" : "Add Expense"}" title="${category.isSavings ? "Add Savings" : "Add Expense"}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></button>`
             }
           </div>
         </article>
@@ -197,16 +188,17 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
     .join("");
 
   const summaryCards = periods
-    .map(([key, label]) => {
+    .map(([key]) => {
       const period = summary.periods[key];
       return `
-        <div class="summary-card">
-          <h3>${label}</h3>
+        <div class="summary-card" data-summary-period="${key}" ${key === state.app.summaryPeriod ? "" : "hidden"}>
+          <div class="summary-metrics">
           <div class="summary-row"><span>Income</span><strong>${money(period.income)}</strong></div>
           <div class="summary-row"><span>Savings</span><strong>${money(period.savings)}</strong></div>
           <div class="summary-row"><span>Uncategorized</span><strong>${money(period.remaining)}</strong></div>
           <div class="summary-row total-unspent"><span>Total Unspent</span><strong>${money(period.savings + period.remaining)}</strong></div>
           <div class="summary-row total-spent"><span>Total Spent</span><strong>${money(period.expenses)}</strong></div>
+          </div>
         </div>
       `;
     })
@@ -222,7 +214,7 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
         <button type="button" class="secondary" data-cancel-category>Cancel</button>
       </form>
     `
-    : '<button type="button" data-show-category-form>Add category</button>';
+    : '<button type="button" data-show-category-form><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>Add category</button>';
 
   const categoryTotal = window.budget.getCategoryPercentageTotal(state);
   return `
@@ -232,8 +224,8 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
 
     <header class="app-header">
       <div>
-        <h1>MyBudgeter <span class="app-version">v${window.budget.APP_VERSION}</span></h1>
-        <p class="small">A simple budgeting board.</p>
+        <h1>My Budget Planner <span class="app-version">v${window.budget.APP_VERSION}</span></h1>
+        <p class="small">My simple budget planner. Not a budget tracker.</p>
       </div>
       <div class="actions">
         <span class="save-status" data-save-status>${escapeHtml(saveMessage)}</span>
@@ -256,23 +248,17 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
             </button>
           </div>
         </div>
-        ${
-          state.app.isIncomeOpen === false
-            ? ""
-            : `
-              <div class="collapsible-body">
+              <div class="collapsible-body" ${state.app.isIncomeOpen === false ? "hidden" : ""}>
                 <div class="pill-list">
                   ${incomeRows || '<div class="empty-state">No income yet.</div>'}
                   <button type="button" class="income-add-button" data-add-income>Add income</button>
                 </div>
               </div>
-            `
-        }
       </div>
     </section>
 
     <section class="card">
-      <div class="section-heading"><div><h2>Budget board</h2></div>${categoryForm}</div>
+      <div class="section-heading budget-board-heading"><div class="budget-board-title"><h2>Budget board</h2></div>${categoryForm}</div>
       <div class="category-form-meta">
         <span>Categories Total: ${categoryTotal.toFixed(1)}%</span>
         <span>Categorized: ${(summary.monthlyIncome ? ((summary.monthlyExpenses + summary.monthlySavings) / summary.monthlyIncome) * 100 : 0).toFixed(1)}%</span>
@@ -281,7 +267,11 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
     </section>
 
     <section class="card">
-      <div class="section-heading"><div><h2>Complete summary</h2></div></div>
+      <div class="section-heading summary-heading"><div><h2>Complete summary</h2></div>
+        <label class="summary-period-control">Period
+          <select data-summary-period-select>${periods.map(([key, label]) => `<option value="${key}" ${key === state.app.summaryPeriod ? "selected" : ""}>${label}</option>`).join("")}</select>
+        </label>
+      </div>
       <div class="summary-grid-wide">${summaryCards}</div>
     </section>
   `;

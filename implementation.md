@@ -1,105 +1,34 @@
-# Implementation Reference
+# Browser Implementation Reference
 
-This document records the intentionally implemented behavior of MyBudgeter. Treat these items as product requirements: do not remove or substantially change them unless the user explicitly asks to do so.
+Read [shared behavior](implementation-shared.md) alongside this document. Android differences are recorded in [android/implementation.md](android/implementation.md).
 
-## Application model and persistence
+## Browser behavior
 
-- MyBudgeter is a client-side budgeting app with no server dependency.
+- The page title and app header read My Budget Planner. The subtitle reads "My simple budget planner. Not a budget tracker." Android continues to omit the subtitle.
 - The working budget is automatically saved in browser local storage. A brief Saved status is shown after persistence.
 - The header keeps Download Save File and Import Save File controls together at the top right.
-- A small semantic app version appears immediately after the MyBudgeter title.
-- Download exports the full budget as JSON for backup. Importing a JSON save replaces the current budget after confirmation. Each file records the current semantic app version and a schema tied to its major version.
 - The save help text explains that the budget is stored locally in the browser, recommends downloading a backup, and warns that importing overwrites current data.
-- The exported state includes incomes, categories, items, notes, ordering, colors, grouping, collapse state, and relevant app preferences.
-- Normalization keeps older saves from the current major version usable and supplies defaults for newer fields. A new major version is reserved for a save-format change that cannot import earlier files; backwards-compatible product changes use a minor version and fixes or non-visible changes use a patch version.
-
-## Page layout and global conventions
-
 - The page uses a wide, responsive layout that grows with the browser window up to a 1600px content width rather than staying in a narrow fixed column. Its content gutters and Michael Yeh masthead align with the portfolio at the same browser width.
-- The page uses the portfolio's navy surfaces, serif headings, gold actions, and the canonical Michael Yeh masthead stylesheet from the portfolio site. Category columns retain their assigned colors.
-- Visible labels accompany form controls so their meaning remains clear even when a field already has a value.
-- Titles and button labels use capitalized wording.
-- Save and Cancel controls use consistent themed colors that remain legible on every category color.
-- Delete X controls ask for confirmation. The confirmation dialog offers a Do Not Ask Again For 5 Minutes option, stored for the current browser session.
-- The footer reads Michael Yeh © followed by the current calendar year. JavaScript supplies the year so it changes automatically.
-
-## Net Income
-
-- Net Income is collapsible. Its heading has a click to collapse / click to expand control on the same line as the income summary.
-- The collapsed summary shows the number of income sources and normalized monthly income.
-- Add Income appears after the last income item and creates a new editable income item.
-- The income edit form has labeled Income Source, Amount, Frequency, and Notes fields.
-- Income frequency defaults to Biweekly. Semi-monthly is available for two payments each month. Per Paycheck is not offered because it does not state an actual recurrence interval.
-- Saving updates the compact income item and hides its edit form. Cancelling a newly added item removes it.
-- Each saved income item shows its name, amount, period, and, when present, `Note: ` followed by its note. Items can be edited or removed.
-- Selecting Add Income scrolls the new item’s edit form into view.
-
-## Budget Board and categories
-
-- The Budget Board is collapsible and uses the same click to collapse / click to expand language as Net Income. Its collapsed state shows category count plus monthly spending and savings.
-- Complete Summary is intentionally not collapsible.
-- Categories are equal-width responsive cards. Their colors are assigned when created and persist when categories are reordered.
-- A category has a name, Budget Percentage, Savings Category checkbox, and a persistent color.
-- A new category is created as an empty editable card at the next card position, not as a separate top-of-board form. The page scrolls to it.
-- Saving a category requires both a name and a Budget Percentage greater than zero. Missing requirements are highlighted in red with a visible error message.
-- If the name is exactly Savings, ignoring letter case, the Savings Category checkbox automatically turns on until the user changes that checkbox themselves.
-- The default 20% Savings category is marked as a savings category.
-- The board shows Categories Total (the sum of category budget percentages) and Categorized (the actual monthly expenses plus savings as a percentage of monthly net income). It does not show a Used/Remaining target counter, and only adds a warning when category targets exceed 100%.
-- Category headers show budget percentage, actual percentage of monthly net income represented by the category’s items, and whether the category is Savings or Expenses.
-- The category progress bar displays the actual amount used relative to its category target; the percentage label is based on items currently entered.
-- Categories have a wide, separate drag grip above their name. They can be manually reordered with center and edge drag targets. Dropping in the center swaps categories; dropping on the left or right edge inserts between categories.
-- Category order is always the custom manual order; there is no category sort control.
-
-## Expenses, savings, quantities, and frequencies
-
-- Add Expense and Add Savings appear after the last item in the selected category and create a new item there. Group Add Item creates an item in that group.
-- Newly added items are scrolled into view, including when the action occurs lower than the visible viewport.
-- An item can be edited to set Name, Amount, Quantity, Period Frequency, and optional Group.
-- Quantity accepts decimal values for prorated recurring costs, such as quantity 0.5 for a cost that occurs every two years but is entered as annual.
-- The quantity spinner and arrow keys move in whole-number increments. Arrow Up rounds to the next whole number and Arrow Down rounds to the prior whole number, with a minimum of 1 for those controls.
-- When quantity differs from 1, an item shows the calculation: single item cost × quantity = total, followed by its period frequency.
-- Each individual item and group shows its normalized monthly amount as a percentage of its category's monthly budget target.
-- Items use the available recurrence frequencies, including Semi-monthly, and all calculations normalize them to monthly amounts for comparison and summaries.
-- Expense and savings items have a drag icon on the left and an edit control. The old Copy action is not shown.
-
-## Groups and item organization
-
-- Items with the same group name in a category are rendered together as one group card. Groups can contain subgroups at any depth; their saved group path uses `Parent / Child` notation.
-- A group header has a visual drag grip, an icon-based expand/collapse control to the left of its name, the group’s normalized monthly total, Edit, and Delete controls.
-- A collapsed group shows only its identity and monthly total.
-- Editing a group name renames every item in that group and all of its subgroups. Editing an individual item’s group changes only that item, allowing it to leave or enter a group.
-- The group actions at the bottom include Add Item and Add Subgroup. Add Subgroup creates a nested group with a new editable item; deleting a parent group removes all of its descendants.
-- Groups and individual items can be reordered manually. Groups can be moved alongside regular items, including above or below them.
-- Groups and items can move between categories. Moving a group transfers the entire group tree, including all subgroups and items, so no copy remains in the original category.
+- The masthead loads the canonical Michael Yeh navigation stylesheet from the portfolio site.
+- Categories and expense/savings items have no grab icons or reserved grip space; dragging their card surface retains the existing drag behavior. Categories can be manually reordered with center and edge drag targets. Dropping in the center swaps categories; dropping on the left or right edge inserts between categories.
+- Groups and subgroups have no grab icons or reserved grip space; their existing card/header drag behavior remains available.
+- Add Category follows the shared compact, centered bottom-row layout; opening it still creates the existing full category editor.
+- Category menus offer Edit, Color, and Remove; Color follows the shared picker behavior.
+- Budget Board offers a Categories Per Row selector on desktop with up to 1, 2, or 3 equal-width categories, defaulting to 3. Categories in an incomplete row expand equally to fill that row. The selection saves with the budget and changes layout without resetting open editor fields. Phone browsers retain one column and hide the selector.
+- Hamburger and group collapse buttons are equal-width/height 32-pixel circles with 16-pixel icons. Phone browser layouts use 48-pixel touch targets around 36-pixel visible circles.
 - Edge indicators show the exact insertion location above or below categories, groups, normal items, and group members.
 - Dropping an item on a normal item or a group combines it into a group (creating a new group when necessary). Dropping a group on another group makes the moved group, including its descendants, a subgroup rather than merging both groups. Edge drops retain edge insertion behavior.
 - Dragging an item out of a group clears its group tag. When moving it out, edge insertion before or after a group remains available and is visually indicated.
+- Center-dropping onto a group member creates a subgroup containing the two items; edge drops insert before/after that member.
 - Dropping an item into a group assigns that group. Normal items can also be inserted above or below group members without changing the group.
-- The board intentionally has no item sort-by filter; manual dragging is the organizational method.
+- Adding an item to an existing group preserves that group's position among its siblings; it does not swap the incoming item's order with a group member.
+- Dropping an item before or after a subgroup inserts it in that subgroup's parent, including parents containing only subgroups. Group-edge insertion uses the shared tree-aware movement helper.
 
-## Complete Summary
+- Desktop organization uses mouse drag and drop; phone layouts stack cards and fields vertically.
+- Net Income defaults to collapsed under the shared preference rules; entries use hamburger menus with Edit/Remove actions, including on initial page load. Menu options have a small visible gap.
+- Net Income, Budget Board, and Notes controls use Click To Expand/Collapse wording and preserve the saved section state. FAQ retains its native disclosure control and saves its section state.
+- The browser uses its existing local storage key and JSON download/import workflow.
 
-- Complete Summary presents normalized totals for Weekly, Biweekly, Monthly, Quarterly, and Annual periods.
-- Each period card shows Income, Savings, Uncategorized, Total Unspent, and Total Spent.
-- Uncategorized replaces the former Remaining wording in this section.
-- Total Unspent includes both Savings and Uncategorized amounts.
-- Total Spent is shown below Total Unspent and uses red styling.
-
-## Notes
-
-- Notes is a dedicated section below Complete Summary.
-- It is a simple plain-text textarea with no Markdown mode, formatting toolbar, or rich-text behavior.
-- Notes autosave with the rest of the budget and are included in downloaded save files.
-
-## FAQ
-
-- FAQ is the bottom section above the footer and is collapsed by default. Each detailed question is also collapsed by default and explains budget calculations, frequency calculations, available budgeting features, local save-file behavior and privacy, and unsupported capabilities including bank connections, automatic transaction imports, cloud sync, and shared budgets.
-
-## Source structure
-
-- `index.html` loads the app shell and browser scripts.
-- `src/budget.js` owns state defaults, normalization, sorting, and budget calculations.
-- `src/app-template.js` renders the base HTML for the main sections.
-- `src/main.js` manages persistence, events, dynamic UI, form labeling, collapse controls, confirmation dialogs, grouping, drag and drop, and import/export.
-- `src/style.css` contains the responsive layout, card colors, controls, and drag/drop indicators.
-- `test/budget.test.js` uses Node's built-in test runner to protect budget defaults, frequency normalization, summary calculations, category usage, and sorting behavior. Run it with `node --test`.
+- At widths up to 720px, cards/forms stack vertically with 48px action targets, wrapping text, compact gutters, and no accumulating subgroup indentation. Desktop responsive category columns and all drag/drop handlers remain available.
+- Browser category editors retain their existing live draft autosave behavior.
+- Storage uses MyBudgeter-save-v1, with a 150ms save debounce and pending-save flushes on page hide/background.

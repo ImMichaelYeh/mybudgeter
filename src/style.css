@@ -20,7 +20,10 @@
   --gold-dark: #c69214;
   --page-gutter: 2rem;
   --content-width: 1600px;
-  --site-brand-offset: max(2rem, calc((100vw - var(--content-width)) / 2 + 2rem));
+  --site-brand-offset: max(
+    2rem,
+    calc((100vw - var(--content-width)) / 2 + 2rem)
+  );
 }
 
 * {
@@ -117,8 +120,20 @@ button,
 }
 .summary-grid-wide {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
+  margin-inline: auto;
   gap: 12px;
+}
+.summary-heading {
+  flex-wrap: wrap;
+}
+.summary-period-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.summary-period-control select {
+  width: auto;
 }
 .summary-item {
   background: #0c2944;
@@ -135,13 +150,12 @@ button,
   font-weight: 700;
 }
 .summary-card {
-  background: #0c2944;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 12px;
+  min-width: 0;
 }
-.summary-card h3 {
-  margin: 0 0 8px;
+.summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr));
+  gap: 10px;
 }
 .collapsed-summary {
   padding: 12px;
@@ -153,25 +167,43 @@ button,
 }
 .summary-row {
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 8px;
+  background: #0c2944;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
   font-size: 0.95rem;
 }
+.summary-row > span {
+  text-align: center;
+}
 .summary-row strong {
+  text-align: center;
   font-weight: 700;
 }
 .summary-row.total-unspent {
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
   color: #5eead4;
 }
 .summary-row.total-spent {
   color: #fca5a5;
 }
 .notes-textarea {
-  min-height: 220px;
+  min-height: 64px;
+  overflow-y: hidden;
+  resize: none;
+}
+.notes-card .section-heading {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.notes-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .faq-card > details > summary {
   display: flex;
@@ -315,6 +347,51 @@ button.small-button {
   gap: 8px;
   flex-wrap: wrap;
 }
+.actions > button[hidden] {
+  display: none !important;
+}
+button.entry-menu-toggle,
+button.group-toggle,
+button.expense-add-button {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 50%;
+}
+.entry-menu-toggle svg,
+.category-add-row svg,
+.expense-add-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.entry-action-menu {
+  position: fixed;
+  z-index: 110;
+  display: grid;
+  gap: 4px;
+  width: 160px;
+  max-width: calc(100vw - 16px);
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.entry-action-menu button {
+  min-height: 48px;
+  border-radius: 6px;
+  text-align: left;
+}
 header .actions {
   max-width: 520px;
   justify-content: flex-end;
@@ -375,20 +452,47 @@ header .actions {
 .section-heading h2 {
   margin: 0;
 }
+.budget-board-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  min-width: 0;
+}
+.budget-board-title .message {
+  color: #ef4444;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
 .inline-form input {
   min-width: 140px;
 }
 .category-form-meta {
   display: flex;
-  gap: 12px;
+  gap: 12px 28px;
   flex-wrap: wrap;
   margin: 8px 0 14px;
   color: var(--muted);
   font-size: 0.95rem;
+  align-items: center;
 }
-.category-form-meta .message {
-  color: #b91c1c;
-  font-weight: 600;
+.board-layout-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.board-layout-control select {
+  width: auto;
+  padding: 6px 10px;
+}
+.board-period-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.board-period-control select {
+  width: auto;
 }
 .collapsible-card {
   border: 1px solid var(--border);
@@ -457,30 +561,47 @@ header .actions {
   flex-wrap: wrap;
   gap: 14px;
 }
-.board > [data-show-category-form] {
-  flex: 1 1 320px;
-  min-width: 260px;
-  min-height: 180px;
+.category-add-row {
+  flex-basis: 100%;
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+}
+.category-add-row > button {
+  width: 160px;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 48px;
   border: 2px dashed var(--border);
   background: var(--surface-muted);
   color: var(--ink);
   font-weight: 700;
 }
+.category-add-row svg {
+  flex-shrink: 0;
+}
 .category-column {
+  flex: 1 1 calc((100% + 14px) / var(--categories-per-row, 3) - 14px);
   background: var(--accent);
   color: white;
   border-radius: 16px;
-  padding: 34px 14px 14px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  flex: 1 1 320px;
-  min-width: 260px;
+  min-width: 0;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
   position: relative;
 }
 .category-column h3 {
   margin: 0 0 4px;
+}
+.category-column .empty-item {
+  color: inherit;
 }
 .category-column p {
   margin: 0;
@@ -563,9 +684,7 @@ header .actions {
   color: #1e3a8a;
 }
 .expense-add-button {
-  background: rgba(255, 255, 255, 0.92);
-  color: #1e3a8a;
-  font-weight: 700;
+  justify-self: center;
 }
 .category-column .category-edit-form button[type="submit"],
 .category-column .group-rename-form button[type="submit"] {
@@ -595,24 +714,7 @@ button.secondary {
   background: rgba(15, 23, 42, 0.18);
 }
 .item-group[draggable] {
-  padding-top: 26px;
   cursor: grab;
-}
-.item-group[draggable]::before {
-  content: "⠿";
-  position: absolute;
-  z-index: 1;
-  top: 0;
-  left: 50%;
-  width: 64px;
-  padding: 4px 12px;
-  border-radius: 0 0 8px 8px;
-  background: rgba(15, 23, 42, 0.35);
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 0.9rem;
-  line-height: 1;
-  text-align: center;
-  transform: translateX(-50%);
 }
 .item-group-header {
   display: flex;
@@ -626,14 +728,8 @@ button.secondary {
   margin: 0;
   font-size: 0.85rem;
 }
-.group-add-button {
-  min-width: 32px;
-  font-size: 1.1rem;
-  font-weight: 700;
-}
-.item-group .group-add-button {
-  width: calc(100% - 16px);
-  margin: 8px;
+.item-group > .group-add-button {
+  margin: 8px auto;
 }
 .item-group .item-group {
   margin: 8px;
@@ -673,20 +769,15 @@ button.secondary {
   gap: 0;
 }
 .item-group .expense-item {
-  border-radius: 0;
-  background: transparent;
-}
-.item-group .expense-item + .expense-item {
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  margin: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.18);
 }
 .group-total {
   margin-left: auto;
   font-size: 0.85rem;
-}
-.group-toggle {
-  display: grid;
-  min-width: 28px;
-  place-items: center;
+  font-weight: 400;
 }
 .group-toggle svg {
   width: 16px;
@@ -749,6 +840,9 @@ button.secondary {
 .expense-item.item-group-combine-target {
   outline: 2px dashed rgba(255, 255, 255, 0.95);
   outline-offset: 3px;
+}
+.item-group.group-drop-target::after {
+  content: "Add To Group";
 }
 .expense-item.item-combine-target::after,
 .item-group.group-combine-target::after,
@@ -859,7 +953,7 @@ button.secondary {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px 8px 30px;
+  padding: 8px 10px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.16);
   position: relative;
@@ -871,31 +965,6 @@ button.secondary {
 .expense-item[draggable],
 .category-column[draggable] {
   cursor: grab;
-}
-.category-column[draggable]::before,
-.expense-item[draggable]::before {
-  content: "⠿";
-  position: absolute;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 1.2rem;
-  line-height: 1;
-}
-.category-column[draggable]::before {
-  content: "⠿";
-  top: 0;
-  left: 50%;
-  width: 76px;
-  transform: translateX(-50%);
-  padding: 5px 16px;
-  border-radius: 0 0 9px 9px;
-  background: rgba(15, 23, 42, 0.28);
-  font-size: 1rem;
-  text-align: center;
-}
-.expense-item[draggable]::before {
-  top: 50%;
-  left: 9px;
-  transform: translateY(-50%);
 }
 .category-column.drop-target {
   outline: 3px dashed rgba(255, 255, 255, 0.95);
@@ -988,16 +1057,20 @@ button.secondary {
 .expense-item .actions {
   justify-content: flex-end;
 }
-.tag {
-  display: inline-block;
-  margin-top: 5px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.24);
-  font-size: 0.75rem;
+.item-name-row {
+  overflow-wrap: anywhere;
+}
+.item-name-row > strong {
+  display: inline;
+}
+.item-name-row > .small {
+  margin-left: 6px;
 }
 @media (max-width: 575.98px) {
-  :root { --page-gutter: 1.25rem; --site-brand-offset: 1.25rem; }
+  :root {
+    --page-gutter: 1.25rem;
+    --site-brand-offset: 1.25rem;
+  }
 }
 @media (max-width: 720px) {
   header {
@@ -1016,5 +1089,563 @@ button.secondary {
   }
   .column-metrics {
     grid-template-columns: 1fr;
+  }
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+.button-like:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 3px;
+}
+.storage-error {
+  border-color: #fca5a5;
+  color: #fecaca;
+}
+.storage-error button {
+  margin: 8px;
+}
+.move-dialog {
+  width: min(100% - 24px, 480px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.move-dialog::backdrop {
+  background: rgb(7 28 53 / 75%);
+}
+.move-dialog h2 {
+  margin: 0;
+}
+.category-color-dialog input[type="color"] {
+  width: 100%;
+  min-height: 48px;
+}
+.android-app {
+  --page-gutter: 12px;
+}
+.android-app .app-header {
+  margin-top: 12px;
+  gap: 4px;
+}
+.android-app .app-header h1 {
+  font-size: 1.5rem;
+}
+.android-app .app-header .actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: none;
+}
+.android-app .app-header .actions > button {
+  padding: 8px;
+  font-size: 0.85rem;
+}
+.android-app .app-header .save-status {
+  margin-left: 8px;
+  font-size: 0.7rem;
+}
+.android-app .app-header .save-help {
+  grid-column: 1 / -1;
+}
+.android-app .save-help {
+  text-align: left;
+}
+.android-app .check {
+  white-space: normal;
+}
+.android-app .section-heading {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.android-app .section-heading h2 {
+  font-size: 1.1rem;
+}
+.android-app .section-heading .hint {
+  padding: 4px;
+  font-size: 0.65rem;
+  letter-spacing: 0;
+}
+.android-app .app-header {
+  flex-direction: column;
+  align-items: stretch;
+}
+.android-app .column-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+.android-app .column-header h3 {
+  font-size: 1rem;
+}
+.android-app .column-header p {
+  font-size: 0.72rem;
+}
+.android-app .column-header > .actions {
+  display: block;
+}
+.android-app .column-header > .actions > button {
+  min-width: 48px;
+  padding: 4px;
+  font-size: 0.65rem;
+}
+.android-app .expense-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 10px 12px;
+}
+.android-app .expense-item > div:not(.actions) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.android-app .expense-item .small {
+  font-size: 0.72rem;
+}
+.android-app .expense-item > .actions,
+.android-app .item-group-header > .actions {
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+.android-app .expense-item > .actions > button,
+.android-app .item-group-header > .actions > button {
+  min-width: 48px;
+  padding: 4px;
+  font-size: 0.65rem;
+}
+.android-app .app-footer {
+  overflow-wrap: anywhere;
+}
+.drag-status {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.android-app .column-header,
+.android-app .item-group-header,
+.android-app .expense-item {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.android-app .touch-dragging {
+  opacity: 0.55;
+  outline: 2px dashed white;
+}
+.android-app .editing-active .column-header,
+.android-app .editing-active .item-group-header,
+.android-app .editing-active .expense-item,
+.android-app input,
+.android-app textarea {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+.touch-drag-preview {
+  position: fixed;
+  z-index: 100;
+  max-width: calc(100vw - 16px);
+  padding: 8px 12px;
+  border: 1px solid white;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  color: white;
+  opacity: 0.9;
+  pointer-events: none;
+  transform: translateY(-100%);
+  overflow-wrap: anywhere;
+}
+.touch-drag-preview h3,
+.touch-drag-preview h4,
+.touch-drag-preview p {
+  margin: 0;
+}
+.touch-drag-preview .group-total {
+  display: block;
+}
+.android-app .touch-drop {
+  position: relative;
+  outline: 2px dashed white;
+}
+.android-app .touch-drop[data-touch-drop="before"] {
+  box-shadow: inset 0 4px white;
+}
+.android-app .touch-drop[data-touch-drop="after"] {
+  box-shadow: inset 0 -4px white;
+}
+.android-app .touch-drop::after {
+  content: "Group Here";
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 4px;
+  padding: 2px 6px;
+  background: #0f172a;
+  color: white;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  pointer-events: none;
+}
+.android-app .touch-drop[data-touch-drop="before"]::after {
+  content: "Drop Before";
+}
+.android-app .touch-drop[data-touch-drop="after"]::after {
+  content: "Drop After";
+  top: auto;
+  bottom: 0;
+}
+.android-app .touch-drop[data-touch-drop="swap"]::after {
+  content: "Swap";
+}
+.android-app .touch-drop[data-touch-drop="append"]::after {
+  content: "Move Here";
+}
+.android-app .item-group.touch-drop[data-touch-drop="combine"]::after {
+  content: "Add To Group";
+}
+.android-app .column-header > .category-edit-form {
+  grid-column: 1 / -1;
+}
+.android-app .board,
+.android-app .field-row,
+.android-app .summary-grid-wide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.android-app .category-column {
+  min-width: 0;
+}
+.android-app .category-column {
+  padding: 14px;
+}
+.android-app .category-add-row > button {
+  width: 100%;
+  min-height: 56px;
+}
+.android-app .column-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-column: 1 / -1;
+  gap: 4px;
+}
+.android-app .column-metrics div {
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 2px;
+  padding: 2px 4px;
+  line-height: 1.2;
+}
+.android-app .category-stats {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  align-items: center;
+}
+.android-app .category-stats .progress-bar {
+  height: 8px;
+}
+.android-app .category-stats .progress-label {
+  color: inherit;
+  line-height: 1.2;
+  text-shadow: none;
+}
+.android-app button,
+.android-app label.check,
+.android-app .button-like,
+.android-app input:not([type="checkbox"]),
+.android-app select {
+  min-height: 48px;
+}
+.android-app .link-button {
+  padding: 8px;
+  text-align: left;
+}
+.android-app .item-group-header {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 4px;
+  align-items: center;
+  justify-content: start;
+  padding: 8px;
+}
+.android-app .item-group-header > .group-toggle {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: center;
+}
+.android-app .item-group-header > .group-toggle,
+.android-app .actions > button.entry-menu-toggle,
+.android-app button.expense-add-button {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 6px solid transparent;
+  background-clip: padding-box;
+  border-radius: 50%;
+}
+.android-app .group-name-row {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.android-app .group-name-row h4 {
+  display: inline;
+  font-size: 1.1rem;
+  text-align: left;
+}
+.android-app .group-name-row .group-total {
+  margin-left: 0;
+  font-size: 0.8rem;
+}
+.android-app .item-group-header > .actions {
+  grid-column: 3;
+  grid-row: 1;
+}
+.android-app .item-group .item-group {
+  margin: 8px 0;
+}
+.android-app .item-group {
+  padding: 0;
+}
+.android-app .item-group h4,
+.android-app .category-column h3,
+.android-app .income-item strong,
+.android-app .expense-item strong,
+.android-app .summary-row {
+  overflow-wrap: anywhere;
+}
+.android-app .income-item {
+  flex-wrap: wrap;
+}
+.android-app .faq-card > details > summary span {
+  font-size: 0;
+}
+.android-app .faq-card > details > summary span::after {
+  content: "Tap To Expand";
+  font-size: 0.8rem;
+}
+.android-app .faq-card > details[open] > summary span::after {
+  content: "Tap To Collapse";
+}
+@media (max-width: 720px) {
+  .board-layout-control {
+    display: none;
+  }
+  :root {
+    --page-gutter: 12px;
+    --site-brand-offset: 12px;
+  }
+  .board,
+  .field-row,
+  .summary-grid-wide {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .category-column {
+    min-width: 0;
+  }
+  .column-header {
+    flex-wrap: wrap;
+  }
+  .item-group-header,
+  .expense-item,
+  .income-item {
+    flex-wrap: wrap;
+  }
+  .item-group .item-group {
+    margin: 8px 0;
+  }
+  .item-group {
+    padding: 0;
+  }
+  .item-group h4,
+  .category-column h3,
+  .expense-item strong,
+  .income-item strong,
+  .summary-row {
+    overflow-wrap: anywhere;
+  }
+  .group-total,
+  .item-group-header .actions {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+  button,
+  label.check,
+  .button-like,
+  input:not([type="checkbox"]),
+  select {
+    min-height: 48px;
+  }
+  .link-button {
+    padding: 8px;
+  }
+  button.entry-menu-toggle,
+  button.group-toggle,
+  button.expense-add-button {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    border: 6px solid transparent;
+    background-clip: padding-box;
+  }
+  .check {
+    white-space: normal;
+  }
+}
+
+
+.android-app .summary-metrics {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.android-app .summary-row {
+  flex-direction: row;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+}
+.android-app .summary-row > span {
+  text-align: left;
+}
+.android-app .summary-row strong {
+  text-align: right;
+}
+.android-app .summary-row:last-child {
+  border-bottom: 0;
+}
+.android-app .budget-board-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 8px;
+}
+.android-app .budget-board-title {
+  display: contents;
+}
+.android-app .budget-board-title h2 {
+  grid-area: 1 / 1;
+}
+.android-app .budget-board-heading > .hint {
+  grid-area: 1 / 2;
+}
+.android-app .budget-board-title .message {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+.android-app .category-form-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  font-size: 0.8rem;
+}
+.android-app .board-period-control {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  gap: 8px;
+}
+.android-app .board-period-control select {
+  min-width: 0;
+  max-width: 65%;
+  min-height: 48px;
+  padding: 6px 10px;
+}
+
+@media (max-width: 720px) {
+  .summary-metrics {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .summary-row {
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+  }
+  .summary-row > span {
+    text-align: left;
+  }
+  .summary-row strong {
+    text-align: right;
+  }
+  .summary-row:last-child {
+    border-bottom: 0;
+  }
+  .budget-board-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 8px;
+  }
+  .budget-board-title {
+    display: contents;
+  }
+  .budget-board-title h2 {
+    grid-area: 1 / 1;
+  }
+  .budget-board-heading > .hint {
+    grid-area: 1 / 2;
+  }
+  .budget-board-title .message {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .category-form-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 12px;
+    font-size: 0.8rem;
+  }
+  .board-period-control {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .board-period-control select {
+    min-width: 0;
+    max-width: 65%;
+    min-height: 48px;
+    padding: 6px 10px;
+  }
+}
+
+button.category-toggle {
+  display: none;
+}
+.android-app button.category-toggle {
+  display: grid;
+}
+.android-app .column-header {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.android-app .category-column.category-collapsed > .expense-list {
+  display: none;
+}
+@media (max-width: 720px) {
+  button.category-toggle {
+    display: grid;
+  }
+  .column-header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+  }
+  .category-column.category-collapsed > .expense-list {
+    display: none;
   }
 }

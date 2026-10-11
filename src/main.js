@@ -1,9 +1,12 @@
-const STORAGE_KEY = "MyBudgeter-save-v1";
 const app = document.querySelector("#app");
 const budget = window.budget;
+const platform = window.budgetPlatform;
 let currentState;
 let pendingSave;
 let saveTimer;
+let saveQueue = Promise.resolve();
+let saveError = "";
+let saveRevision = 0;
 let draggedType = "";
 let draggedExpenseId = "";
 let draggedGroupName = "";
@@ -21,6 +24,104 @@ const DELETE_CONFIRM_KEY = "MyBudgeter-delete-confirm-until";
 const GROUP_PATH_SEPARATOR = budget.GROUP_SEPARATOR;
 
 const id = () => crypto.randomUUID();
+
+function applyCategoryColor(column, color) {
+  column?.style.setProperty("--accent", color);
+}
+
+function resizeNotesTextarea(textarea) {
+  if (!textarea) return;
+  textarea.style.height = "auto";
+  const borderHeight = textarea.offsetHeight - textarea.clientHeight;
+  textarea.style.height = textarea.scrollHeight + borderHeight + "px";
+}
+
+function updateBoardPeriod(state) {
+  const summary = budget.getBudgetSummary(state);
+  const label = budget.SUMMARY_PERIODS.find(
+    ([key]) => key === state.app.boardPeriod,
+  )[1];
+  for (const category of summary.categories) {
+    const column = document.querySelector(
+      `[data-category-id="${category.id}"]`,
+    );
+    if (!column) continue;
+    const metrics = budget.getCategoryPeriodMetrics(
+      category,
+      state.app.boardPeriod,
+    );
+    for (const [key, value] of Object.entries(metrics))
+      column.querySelector(`[data-category-${key}]`).textContent =
+        budget.formatMoney(value);
+  }
+  document
+    .querySelectorAll(".group-total[data-monthly-total]")
+    .forEach((total) => {
+      total.textContent = budget.formatGroupTotal(
+        Number(total.dataset.monthlyTotal),
+        state.app.boardPeriod,
+      );
+    });
+  const compact = document
+    .querySelector("[data-toggle-budget-board]")
+    ?.closest(".card")
+    .querySelector(".collapsed-summary");
+  const period = summary.periods[state.app.boardPeriod];
+  if (compact)
+    compact.textContent = `${state.categories.length} Categories · ${label} · Spending ${budget.formatMoney(period.expenses)} · Saving ${budget.formatMoney(period.savings)}`;
+}
+
+window.addEventListener("resize", () =>
+  resizeNotesTextarea(document.querySelector(".notes-textarea")),
+);
+
+function openCategoryColor(categoryId) {
+  const category = currentState.categories.find(
+    (entry) => entry.id === categoryId,
+  );
+  if (!category) return;
+  const previousFocus = document.activeElement;
+  const dialog = document.createElement("dialog");
+  dialog.className = "move-dialog category-color-dialog";
+  dialog.setAttribute("aria-label", `Color for ${category.name}`);
+  dialog.innerHTML = `
+    <form>
+      <h2>Category Color</h2>
+      <label class="input-label">Choose Color<input name="picker" type="color" /></label>
+      <label class="input-label">Hex Color<input name="hex" type="text" pattern="#[0-9a-fA-F]{6}" maxlength="7" required placeholder="#2563eb" /></label>
+      <div class="actions"><button type="submit">Save</button><button type="button" class="secondary">Cancel</button></div>
+    </form>`;
+  const form = dialog.querySelector("form");
+  const picker = form.elements.picker;
+  const hex = form.elements.hex;
+  picker.value = /^#[0-9a-f]{6}$/i.test(category.color)
+    ? category.color
+    : "#2563eb";
+  hex.value = picker.value;
+  picker.oninput = () => {
+    hex.value = picker.value;
+  };
+  hex.oninput = () => {
+    if (/^#[0-9a-f]{6}$/i.test(hex.value)) picker.value = hex.value;
+  };
+  form.onsubmit = (event) => {
+    event.preventDefault();
+    if (!budget.setCategoryColor(currentState, categoryId, hex.value)) return;
+    applyCategoryColor(
+      document.querySelector(`[data-category-id="${categoryId}"]`),
+      category.color,
+    );
+    saveState(currentState);
+    dialog.close();
+  };
+  dialog.querySelector("button.secondary").onclick = () => dialog.close();
+  dialog.addEventListener("close", () => {
+    dialog.remove();
+    previousFocus?.focus({ preventScroll: true });
+  });
+  document.body.append(dialog);
+  dialog.showModal();
+}
 
 function addDraftExpense(state, categoryId, group = "") {
   const expense = {
@@ -49,6 +150,9 @@ function confirmDeletion(message, onConfirm) {
   backdrop.className = "delete-dialog-backdrop";
   const dialog = document.createElement("section");
   dialog.className = "delete-dialog";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-label", message);
   const text = document.createElement("p");
   text.textContent = message;
   const option = document.createElement("label");
@@ -70,53 +174,49 @@ function confirmDeletion(message, onConfirm) {
   dialog.append(text, option, actions);
   backdrop.append(dialog);
   document.body.append(backdrop);
-  cancel.addEventListener("click", () => backdrop.remove());
+  const previousFocus = document.activeElement;
+  const close = () => {
+    backdrop.remove();
+    previousFocus?.focus();
+  };
+  cancel.focus();
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+    }
+    if (event.key !== "Tab") return;
+    const controls = [checkbox, cancel, remove];
+    const next =
+      (controls.indexOf(document.activeElement) +
+        (event.shiftKey ? -1 : 1) +
+        controls.length) %
+      controls.length;
+    event.preventDefault();
+    controls[next].focus();
+  });
+  cancel.addEventListener("click", close);
   remove.addEventListener("click", () => {
     if (checkbox.checked)
       sessionStorage.setItem(
         DELETE_CONFIRM_KEY,
         String(Date.now() + 5 * 60 * 1000),
       );
-    backdrop.remove();
+    close();
     onConfirm();
   });
 }
 
 function moveItemBesideGroup(state, categoryId, itemId, group, placement) {
-  const units = [];
-  const byKey = new Map();
-  budget
-    .sortExpenses(
-      state.expenses.filter((expense) => expense.categoryId === categoryId),
-      "manual",
-    )
-    .forEach((expense) => {
-      const key = expense.group
-        ? `group:${expense.group}`
-        : `item:${expense.id}`;
-      if (!byKey.has(key)) {
-        const unit = { key, items: [] };
-        byKey.set(key, unit);
-        units.push(unit);
-      }
-      byKey.get(key).items.push(expense);
-    });
-  const sourceIndex = units.findIndex((unit) => unit.key === `item:${itemId}`);
-  if (sourceIndex < 0) return false;
-  const [source] = units.splice(sourceIndex, 1);
-  const targetIndex = units.findIndex((unit) => unit.key === `group:${group}`);
-  if (targetIndex < 0) return false;
-  units.splice(
-    placement === "before" ? targetIndex : targetIndex + 1,
-    0,
-    source,
+  const item = state.expenses.find((expense) => expense.id === itemId);
+  return Boolean(
+    item &&
+    budget.moveBudgetEntry(
+      state,
+      { type: "item", categoryId: item.categoryId, id: item.id },
+      { categoryId, target: { type: "group", group }, placement },
+    ),
   );
-  units
-    .flatMap((unit) => unit.items)
-    .forEach((expense, index) => {
-      expense.sortOrder = index + 1;
-    });
-  return true;
 }
 
 function moveItemBesideItem(state, categoryId, sourceId, targetId, placement) {
@@ -259,27 +359,7 @@ function nextGroupName(state, categoryId) {
   return name;
 }
 
-function nextSubgroupName(state, categoryId, parentGroup) {
-  const groups = new Set(
-    state.expenses
-      .filter((expense) => expense.categoryId === categoryId)
-      .map((expense) => expense.group)
-      .filter(Boolean),
-  );
-  let index = 1;
-  let name = `${parentGroup}${GROUP_PATH_SEPARATOR}New Subgroup`;
-  while (groups.has(name))
-    name = `${parentGroup}${GROUP_PATH_SEPARATOR}New Subgroup ${++index}`;
-  return name;
-}
-
-function renderNestedGroups(
-  list,
-  state,
-  categoryId,
-  categoryTarget,
-  formatCurrency,
-) {
+function renderNestedGroups(list, state, categoryId) {
   const groupedItems = [...list.children].map((item) => ({
     item,
     expense: state.expenses.find(
@@ -348,6 +428,7 @@ function renderNestedGroups(
     toggle.dataset.toggleGroup = group.path;
     toggle.title = isCollapsed ? "Expand Group" : "Collapse Group";
     toggle.setAttribute("aria-label", toggle.title);
+    toggle.setAttribute("aria-expanded", String(!isCollapsed));
     toggle.innerHTML = isCollapsed
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>'
       : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>';
@@ -355,7 +436,11 @@ function renderNestedGroups(
     heading.textContent = group.name;
     const total = document.createElement("strong");
     total.className = "group-total";
-    total.textContent = `${formatCurrency(monthlyTotal)} / Month · ${budget.getCategorySharePercent(monthlyTotal, categoryTarget).toFixed(1)}%`;
+    total.dataset.monthlyTotal = monthlyTotal;
+    total.textContent = budget.formatGroupTotal(
+      monthlyTotal,
+      state.app.boardPeriod,
+    );
     const rename = document.createElement("button");
     rename.type = "button";
     rename.className = "ghost small-button";
@@ -376,17 +461,15 @@ function renderNestedGroups(
     group.entries.forEach((entry) =>
       items.append(entry.nodeType === 1 ? entry : renderGroup(entry)),
     );
-    const addSubgroup = document.createElement("button");
-    addSubgroup.type = "button";
-    addSubgroup.className = "expense-add-button group-add-button";
-    addSubgroup.dataset.addSubgroup = group.path;
-    addSubgroup.textContent = "+ Add Subgroup";
     const addItem = document.createElement("button");
     addItem.type = "button";
-    addItem.className = "expense-add-button group-add-button";
+    addItem.className = "ghost expense-add-button group-add-button";
     addItem.dataset.addGroupItem = group.path;
-    addItem.textContent = "+ Add Item";
-    container.append(header, items, addSubgroup, addItem);
+    addItem.innerHTML =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>';
+    addItem.setAttribute("aria-label", `Add Item to ${group.path}`);
+    addItem.title = "Add Item";
+    container.append(header, items, addItem);
     return container;
   };
 
@@ -395,37 +478,6 @@ function renderNestedGroups(
       entry.nodeType === 1 ? entry : renderGroup(entry),
     ),
   );
-  return true;
-}
-
-function moveItemWithinGroup(
-  state,
-  categoryId,
-  group,
-  sourceId,
-  targetId,
-  placement,
-) {
-  const items = budget.sortExpenses(
-    state.expenses.filter(
-      (expense) => expense.categoryId === categoryId && expense.group === group,
-    ),
-    "manual",
-  );
-  const sourceIndex = items.findIndex((item) => item.id === sourceId);
-  const targetIndex = items.findIndex((item) => item.id === targetId);
-  if (sourceIndex < 0 || targetIndex < 0) return false;
-  const slots = items.map((item) => item.sortOrder);
-  const [source] = items.splice(sourceIndex, 1);
-  const destinationIndex = items.findIndex((item) => item.id === targetId);
-  items.splice(
-    placement === "before" ? destinationIndex : destinationIndex + 1,
-    0,
-    source,
-  );
-  items.forEach((item, index) => {
-    item.sortOrder = slots[index];
-  });
   return true;
 }
 
@@ -454,6 +506,12 @@ function moveCategory(state, sourceId, targetId, placement) {
 }
 
 function downloadSaveFile(state) {
+  if (platform.isAndroid) {
+    platform
+      .exportFile(JSON.stringify(budget.createSavePayload(state), null, 2))
+      .catch((error) => window.alert(error.message));
+    return;
+  }
   const url = URL.createObjectURL(
     new Blob([JSON.stringify(budget.createSavePayload(state), null, 2)], {
       type: "application/json",
@@ -466,36 +524,98 @@ function downloadSaveFile(state) {
   URL.revokeObjectURL(url);
 }
 
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw
-      ? budget.normalizeSaveState(JSON.parse(raw))
-      : budget.createEmptyState();
-  } catch {
-    return budget.createEmptyState();
-  }
+async function loadState() {
+  const raw = await platform.load();
+  return raw
+    ? budget.normalizeSaveState(JSON.parse(raw))
+    : budget.createEmptyState();
 }
 
 function saveState(state) {
-  pendingSave = budget.createSavePayload(state);
+  pendingSave = {
+    value: JSON.stringify(budget.createSavePayload(state)),
+    revision: ++saveRevision,
+  };
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingSave));
+  saveTimer = setTimeout(flushSave, platform.isAndroid ? 0 : 150);
+}
+
+function flushSave() {
+  clearTimeout(saveTimer);
+  if (!pendingSave) return saveQueue;
+  const { value, revision } = pendingSave;
+  pendingSave = null;
+  saveQueue = saveQueue.then(async () => {
+    try {
+      await platform.save(value);
+      saveError = "";
+      document.querySelector(".storage-error")?.remove();
+      showSaved();
+    } catch (error) {
+      if (revision === saveRevision) pendingSave ||= { value, revision };
+      saveError = `Budget not saved: ${error.message}`;
+      showStorageError();
+    }
+  });
+  return saveQueue;
+}
+
+function showStorageError() {
+  if (!saveError) return;
+  document.querySelector(".storage-error")?.remove();
+  const message = document.createElement("div");
+  message.className = "storage-error card";
+  message.setAttribute("role", "alert");
+  message.textContent = saveError;
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.textContent = "Retry Save";
+  retry.addEventListener("click", () => {
+    saveState(currentState);
+    flushSave();
+  });
+  message.append(retry);
+  app.prepend(message);
+}
+
+async function importBudget(value) {
+  if (value == null) return;
+  try {
+    const replacement = budget.normalizeSaveState(JSON.parse(value));
+    if (
+      !window.confirm("Importing will overwrite the current budget. Continue?")
+    )
+      return;
+    app.inert = true;
+    app.setAttribute("aria-busy", "true");
+    await flushSave();
+    const payload = JSON.stringify(budget.createSavePayload(replacement));
+    await platform.save(payload);
     pendingSave = null;
+    saveError = "";
+    currentState = replacement;
+    render(currentState);
     showSaved();
-  }, 150);
+    window.budgetMobile?.checkpoint(true);
+  } catch (error) {
+    window.alert(`Could not import the budget: ${error.message}`);
+  } finally {
+    app.inert = false;
+    app.removeAttribute("aria-busy");
+  }
 }
 
 function showSaved() {
   const status = document.querySelector("[data-save-status]");
   if (!status) return;
   status.textContent = "Saved";
+  status.setAttribute("role", "status");
   status.classList.add("visible");
   setTimeout(() => status.classList.remove("visible"), 1400);
 }
 
 function render(state) {
+  const scrollPosition = window.scrollY;
   currentState = state;
   app.innerHTML = window.renderApp(
     state,
@@ -525,10 +645,33 @@ function render(state) {
     elementToScrollTo = "";
   }
   state.categories.forEach((category) =>
-    document
-      .querySelector(`[data-category-id="${category.id}"]`)
-      ?.style.setProperty("--accent", category.color),
+    applyCategoryColor(
+      document.querySelector(`[data-category-id="${category.id}"]`),
+      category.color,
+    ),
   );
+  showStorageError();
+  window.scrollTo(0, scrollPosition);
+  updateDragAvailability();
+  window.dispatchEvent(new CustomEvent("budget-render", { detail: state }));
+}
+
+function hasOpenBudgetEditor() {
+  return Boolean(
+    document.querySelector(
+      '.expense-form, .expense-edit-form, .category-edit-form, .group-rename-form, .income-edit-form:not([hidden])',
+    ),
+  );
+}
+
+function updateDragAvailability() {
+  const editing = hasOpenBudgetEditor();
+  app.classList.toggle("editing-active", editing);
+  if (editing) {
+    app.querySelectorAll('[draggable="true"]').forEach((node) => {
+      node.draggable = false;
+    });
+  }
 }
 
 function formValues(form) {
@@ -553,6 +696,15 @@ function showFormError(form, message) {
 }
 
 function wireEvents(state) {
+  document
+    .querySelector("[data-summary-period-select]")
+    ?.addEventListener("change", (event) => {
+      state.app.summaryPeriod = event.target.value;
+      document.querySelectorAll("[data-summary-period]").forEach((card) => {
+        card.hidden = card.dataset.summaryPeriod !== state.app.summaryPeriod;
+      });
+      saveState(state);
+    });
   if (state.app.expenseSort === "group") state.app.expenseSort = "manual";
   Object.keys(state.app.expenseSorts || {}).forEach((categoryId) => {
     if (state.app.expenseSorts[categoryId] === "group")
@@ -562,53 +714,76 @@ function wireEvents(state) {
   const incomeToggle = document.querySelector("[data-toggle-income]");
   if (incomeToggle)
     cards[0]?.querySelector(".section-heading")?.append(incomeToggle);
-  const formatCurrency = (value) => `$${Number(value || 0).toFixed(2)}`;
+  const formatCurrency = budget.formatMoney;
   const summary = budget.getBudgetSummary(state);
-  const makeCollapsible = (card, isOpen, toggleName, details) => {
+  const makeCollapsible = (card, stateKey, toggleName, details) => {
     if (!card) return;
     const heading = card.querySelector(".section-heading");
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "link-button hint";
     toggle.dataset[toggleName] = "true";
-    toggle.textContent = isOpen ? "click to collapse" : "click to expand";
     heading?.append(toggle);
-    const compact = document.createElement("div");
-    compact.className = "collapsed-summary";
-    compact.textContent = details;
-    compact.hidden = isOpen;
-    card.append(compact);
-    [...card.children].forEach((child) => {
-      if (child !== heading && child !== compact) child.hidden = !isOpen;
-    });
+    const compact =
+      details !== undefined ? document.createElement("div") : null;
+    if (compact) {
+      compact.className = "collapsed-summary";
+      compact.textContent = details;
+      card.append(compact);
+    }
+    const update = () => {
+      const isOpen = state.app[stateKey] !== false;
+      toggle.textContent =
+        (platform.isAndroid ? "Tap" : "Click") +
+        " To " +
+        (isOpen ? "Collapse" : "Expand");
+      toggle.setAttribute("aria-expanded", String(isOpen));
+      if (compact) compact.hidden = isOpen;
+      [...card.children].forEach((child) => {
+        if (child !== heading && child !== compact) child.hidden = !isOpen;
+      });
+      if (isOpen) resizeNotesTextarea(card.querySelector(".notes-textarea"));
+    };
+    toggle.onclick = (event) => {
+      event.stopPropagation();
+      state.app[stateKey] = state.app[stateKey] === false;
+      update();
+      saveState(state);
+      window.budgetMobile?.checkpoint();
+    };
+    update();
   };
   makeCollapsible(
     cards[1],
-    state.app.isBudgetBoardOpen !== false,
+    "isBudgetBoardOpen",
     "toggleBudgetBoard",
-    `${state.categories.length} Categories · Monthly Spending ${formatCurrency(summary.monthlyExpenses)} · Monthly Savings ${formatCurrency(summary.monthlySavings)}`,
+    `${state.categories.length} Categories · Spending ${formatCurrency(summary.monthlyExpenses)} · Saving ${formatCurrency(summary.monthlySavings)}`,
   );
   const notesCard = document.createElement("section");
   notesCard.className = "card notes-card";
   const notesHeading = document.createElement("div");
   notesHeading.className = "section-heading";
-  notesHeading.innerHTML =
-    '<div><h2>Notes</h2><p class="small">Personal notes are saved with your budget.</p></div>';
+  notesHeading.innerHTML = "<h2>Notes</h2>";
   const notesEditor = document.createElement("textarea");
   notesEditor.className = "notes-textarea";
+  notesEditor.rows = 2;
   notesEditor.value = state.notes || "";
   notesEditor.placeholder = "Write your notes here";
   notesEditor.addEventListener("input", () => {
+    resizeNotesTextarea(notesEditor);
     state.notes = notesEditor.value;
+    notesCard.querySelector(".notes-preview").textContent = state.notes;
     saveState(state);
   });
   notesCard.append(notesHeading, notesEditor);
   app?.append(notesCard);
+  makeCollapsible(notesCard, "isNotesOpen", "toggleNotes", state.notes || "");
+  notesCard.querySelector(".collapsed-summary").className = "notes-preview";
   const faqCard = document.createElement("section");
   faqCard.className = "card faq-card";
   faqCard.innerHTML = `
     <details>
-      <summary><h2>FAQ</h2><span>click to expand</span></summary>
+      <summary><h2>FAQs Section</h2><span>click to expand</span></summary>
       <div class="faq-content">
         <details class="faq-question">
           <summary>How does MyBudgeter calculate my budget?</summary>
@@ -644,6 +819,23 @@ function wireEvents(state) {
     </details>
   `;
   app?.append(faqCard);
+  const faqDetails = faqCard.querySelector(":scope > details");
+  faqDetails.open = state.app.isFaqOpen === true;
+  const updateFaq = () => {
+    faqDetails.querySelector("summary span").textContent =
+      (platform.isAndroid ? "Tap" : "Click") +
+      " To " +
+      (faqDetails.open ? "Collapse" : "Expand");
+  };
+  updateFaq();
+  faqDetails.addEventListener("toggle", () => {
+    if (!faqDetails.isConnected) return;
+    updateFaq();
+    if (state.app.isFaqOpen === faqDetails.open) return;
+    state.app.isFaqOpen = faqDetails.open;
+    saveState(state);
+    window.budgetMobile?.checkpoint();
+  });
   const saveActions = document.querySelector("header .actions");
   if (saveActions) {
     const help = document.createElement("p");
@@ -660,7 +852,6 @@ function wireEvents(state) {
       ? (categorizedTotal / summary.monthlyIncome) * 100
       : 0;
     const overage = categoryTotal - 100;
-    categoryMeta.hidden = false;
     categoryMeta.replaceChildren();
     const budgetTotal = document.createElement("span");
     budgetTotal.textContent = `Categories Total: ${categoryTotal.toFixed(1)}%`;
@@ -671,7 +862,7 @@ function wireEvents(state) {
       const warning = document.createElement("span");
       warning.className = "message";
       warning.textContent = `Warning: category targets exceed 100% by ${overage.toFixed(1)}%.`;
-      categoryMeta.append(warning);
+      document.querySelector(".budget-board-title")?.append(warning);
     }
   }
   summary.categories.forEach((category) => {
@@ -690,22 +881,61 @@ function wireEvents(state) {
   });
   const addCategoryButton = document.querySelector("[data-show-category-form]");
   const board = document.querySelector(".board");
-  if (board && addCategoryButton) board.append(addCategoryButton);
+  if (board) {
+    const periodLabel = document.createElement("label");
+    periodLabel.className = "board-period-control";
+    periodLabel.append("Budget Period ");
+    const periodSelect = document.createElement("select");
+    periodSelect.dataset.boardPeriodSelect = "";
+    for (const [key, label] of budget.SUMMARY_PERIODS) {
+      const option = document.createElement("option");
+      option.value = key;
+      option.textContent = label;
+      periodSelect.append(option);
+    }
+    periodSelect.value = state.app.boardPeriod;
+    periodSelect.addEventListener("change", () => {
+      state.app.boardPeriod = periodSelect.value;
+      updateBoardPeriod(state);
+      saveState(state);
+    });
+    periodLabel.append(periodSelect);
+    categoryMeta?.append(periodLabel);
+    updateBoardPeriod(state);
+  }
+  if (board && !platform.isAndroid) {
+    board.style.setProperty("--categories-per-row", state.app.categoriesPerRow);
+    const layoutLabel = document.createElement("label");
+    layoutLabel.className = "board-layout-control";
+    layoutLabel.append("Categories Per Row ");
+    const layoutSelect = document.createElement("select");
+    for (const count of [1, 2, 3]) {
+      const option = document.createElement("option");
+      option.value = String(count);
+      option.textContent = String(count);
+      layoutSelect.append(option);
+    }
+    layoutSelect.value = String(state.app.categoriesPerRow);
+    layoutSelect.addEventListener("change", () => {
+      state.app.categoriesPerRow = Number(layoutSelect.value);
+      board.style.setProperty(
+        "--categories-per-row",
+        state.app.categoriesPerRow,
+      );
+      saveState(state);
+    });
+    layoutLabel.append(layoutSelect);
+    categoryMeta?.append(layoutLabel);
+  }
+  if (board && addCategoryButton) {
+    const addCategoryRow = document.createElement("div");
+    addCategoryRow.className = "category-add-row";
+    addCategoryRow.append(addCategoryButton);
+    board.append(addCategoryRow);
+  }
   document.querySelectorAll(".expense-list").forEach((list) => {
     const categoryId = list.closest("[data-category-id]")?.dataset.categoryId;
-    const categoryTarget = summary.categories.find(
-      (category) => category.id === categoryId,
-    )?.monthlyTarget;
-    if (
-      renderNestedGroups(
-        list,
-        state,
-        categoryId,
-        categoryTarget,
-        formatCurrency,
-      )
-    )
-      return;
+    if (renderNestedGroups(list, state, categoryId)) return;
     const groups = new Map();
     const nodes = [];
     [...list.children].forEach((item) => {
@@ -747,7 +977,11 @@ function wireEvents(state) {
         heading.textContent = group;
         const total = document.createElement("strong");
         total.className = "group-total";
-        total.textContent = `${formatCurrency(groupTotal)} / Month · ${budget.getCategorySharePercent(groupTotal, categoryTarget).toFixed(1)}%`;
+        total.dataset.monthlyTotal = groupTotal;
+        total.textContent = budget.formatGroupTotal(
+          groupTotal,
+          state.app.boardPeriod,
+        );
         const rename = document.createElement("button");
         rename.type = "button";
         rename.className = "ghost small-button";
@@ -764,6 +998,7 @@ function wireEvents(state) {
         toggle.dataset.toggleGroup = group;
         toggle.title = isCollapsed ? "Expand Group" : "Collapse Group";
         toggle.setAttribute("aria-label", toggle.title);
+        toggle.setAttribute("aria-expanded", String(!isCollapsed));
         toggle.innerHTML = isCollapsed
           ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>'
           : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>';
@@ -771,19 +1006,17 @@ function wireEvents(state) {
         items.className = "item-group-items";
         const add = document.createElement("button");
         add.type = "button";
-        add.className = "expense-add-button group-add-button";
+        add.className = "ghost expense-add-button group-add-button";
         add.dataset.addGroupItem = group;
-        add.textContent = "+ Add Item";
+        add.innerHTML =
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>';
+        add.setAttribute("aria-label", `Add Item to ${group}`);
+        add.title = "Add Item";
         const actions = document.createElement("div");
         actions.className = "actions";
         actions.append(rename, remove);
         header.append(toggle, heading, total, actions);
-        const addSubgroup = document.createElement("button");
-        addSubgroup.type = "button";
-        addSubgroup.className = "expense-add-button group-add-button";
-        addSubgroup.dataset.addSubgroup = group;
-        addSubgroup.textContent = "+ Add Subgroup";
-        container.append(header, items, addSubgroup, add);
+        container.append(header, items, add);
         groups.set(group, container);
         nodes.push(container);
       }
@@ -813,6 +1046,7 @@ function wireEvents(state) {
       const name = document.createElement("input");
       name.name = "name";
       name.value = editingCategory.name;
+      name.defaultValue = name.value;
       name.required = true;
       const percentage = document.createElement("input");
       percentage.name = "percentage";
@@ -820,6 +1054,7 @@ function wireEvents(state) {
       percentage.min = "0";
       percentage.step = "0.1";
       percentage.value = editingCategory.percentage;
+      percentage.defaultValue = percentage.value;
       percentage.required = true;
       const savings = document.createElement("label");
       savings.className = "check";
@@ -829,6 +1064,7 @@ function wireEvents(state) {
       checkbox.checked =
         editingCategory.isSavings ||
         editingCategory.name.trim().toLowerCase() === "savings";
+      checkbox.defaultChecked = checkbox.checked;
       savings.append(checkbox, " Savings Category");
       const actions = document.createElement("div");
       actions.className = "actions";
@@ -904,6 +1140,7 @@ function wireEvents(state) {
     );
     if (!category) return;
     const saveDraft = () => {
+      if (platform.isAndroid) return;
       category.name = form.elements.name.value;
       category.percentage = Math.max(
         0,
@@ -923,7 +1160,7 @@ function wireEvents(state) {
     if (!expense || Number(expense.multiplier) === 1) return;
     const detail = row.querySelector(".small");
     if (detail)
-      detail.textContent = `${formatCurrency(expense.amount)} × ${expense.multiplier} = ${formatCurrency(expense.amount * expense.multiplier)} · ${expense.frequency}`;
+      detail.textContent = `${formatCurrency(expense.amount)} × ${expense.multiplier} = ${formatCurrency(expense.amount * expense.multiplier)} / ${expense.frequency}`;
   });
   if (state.app.addingExpenseGroup)
     document.querySelector(".expense-form")?.elements.group &&
@@ -1006,7 +1243,7 @@ function wireEvents(state) {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const data = formValues(form);
-      if (!data.name || data.amount <= 0) return;
+      if (!data.name || !Number.isFinite(data.amount) || data.amount < 0) return;
       state.expenses.push({
         ...data,
         id: id(),
@@ -1023,7 +1260,7 @@ function wireEvents(state) {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const data = formValues(form);
-      if (!data.name || data.amount <= 0) return;
+      if (!data.name || !Number.isFinite(data.amount) || data.amount < 0) return;
       const expense = state.expenses.find(
         (item) => item.id === form.dataset.editExpenseForm,
       );
@@ -1040,17 +1277,9 @@ function wireEvents(state) {
       const file = event.target.files?.[0];
       if (!file) return;
       try {
-        if (
-          !window.confirm(
-            "Importing will overwrite the current budget. Continue?",
-          )
-        )
-          return;
-        currentState = budget.normalizeSaveState(JSON.parse(await file.text()));
-        saveState(currentState);
-        render(currentState);
-      } catch {
-        window.alert("That does not look like a MyBudgeter save file.");
+        await importBudget(await file.text());
+      } catch (error) {
+        window.alert(`Could not read the save file: ${error.message}`);
       } finally {
         event.target.value = "";
       }
@@ -1060,14 +1289,50 @@ function wireEvents(state) {
 app?.addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button || !currentState) return;
+  if (button.matches("[data-toggle-category]")) {
+    const categoryId = button.dataset.toggleCategory;
+    currentState.app.collapsedCategories ||= {};
+    const collapsed = currentState.app.collapsedCategories[categoryId] !== true;
+    currentState.app.collapsedCategories[categoryId] = collapsed;
+    button
+      .closest(".category-column")
+      .classList.toggle("category-collapsed", collapsed);
+    button.setAttribute("aria-expanded", String(!collapsed));
+    const category = currentState.categories.find(
+      (entry) => entry.id === categoryId,
+    );
+    button.title = collapsed ? "Expand Category" : "Collapse Category";
+    button.setAttribute(
+      "aria-label",
+      `${collapsed ? "Expand" : "Collapse"} ${category?.name || ""} Category`,
+    );
+    button
+      .querySelector("path")
+      .setAttribute("d", collapsed ? "m9 18 6-6-6-6" : "m6 9 6 6 6-6");
+    saveState(currentState);
+    window.budgetMobile?.checkpoint();
+    return;
+  }
+  if (button.matches("[data-color-category]")) {
+    openCategoryColor(button.dataset.colorCategory);
+    return;
+  }
   if (button.matches("[data-toggle-group]")) {
     const categoryId = button.closest("[data-category-id]")?.dataset.categoryId;
     const groupKey = `${categoryId}:${button.dataset.toggleGroup}`;
     currentState.app.collapsedGroups ||= {};
     currentState.app.collapsedGroups[groupKey] =
       currentState.app.collapsedGroups[groupKey] !== true;
+    const isCollapsed = currentState.app.collapsedGroups[groupKey];
+    button.closest(".item-group").classList.toggle("collapsed", isCollapsed);
+    button.title = isCollapsed ? "Expand Group" : "Collapse Group";
+    button.setAttribute("aria-label", button.title);
+    button.setAttribute("aria-expanded", String(!isCollapsed));
+    button
+      .querySelector("path")
+      .setAttribute("d", isCollapsed ? "m9 18 6-6-6-6" : "m6 9 6 6 6-6");
     saveState(currentState);
-    render(currentState);
+    window.budgetMobile?.checkpoint();
     return;
   }
   if (button.matches("[data-remove-category]")) {
@@ -1078,6 +1343,7 @@ app?.addEventListener("click", (event) => {
     confirmDeletion(
       `Delete ${category?.name || "This"} Category And All Of Its Items?`,
       () => {
+        delete currentState.app.collapsedCategories?.[categoryId];
         currentState.categories = currentState.categories.filter(
           (item) => item.id !== categoryId,
         );
@@ -1126,20 +1392,6 @@ app?.addEventListener("click", (event) => {
     render(currentState);
     return;
   }
-  if (button.matches("[data-add-subgroup]")) {
-    const categoryId =
-      button.closest("[data-category-id]")?.dataset.categoryId || "";
-    const subgroup = nextSubgroupName(
-      currentState,
-      categoryId,
-      button.dataset.addSubgroup,
-    );
-    const expenseId = addDraftExpense(currentState, categoryId, subgroup);
-    elementToScrollTo = `[data-expense-id="${expenseId}"]`;
-    saveState(currentState);
-    render(currentState);
-    return;
-  }
   if (button.matches("[data-rename-group]")) {
     const group = button.dataset.renameGroup;
     const categoryId = button.closest("[data-category-id]")?.dataset.categoryId;
@@ -1147,11 +1399,14 @@ app?.addEventListener("click", (event) => {
     if (!header || !categoryId) return;
     const form = document.createElement("form");
     form.className = "group-rename-form";
+    form.dataset.renameGroup = group;
     const label = document.createElement("label");
     label.className = "input-label";
     label.textContent = "Group Name";
     const input = document.createElement("input");
+    input.name = "groupName";
     input.value = budget.splitGroupPath(group).at(-1) || group;
+    input.defaultValue = input.value;
     input.required = true;
     label.append(input);
     const actions = document.createElement("div");
@@ -1194,17 +1449,22 @@ app?.addEventListener("click", (event) => {
     });
     cancel.addEventListener("click", () => render(currentState));
     header.replaceWith(form);
+    updateDragAvailability();
     input.focus();
     return;
   }
   if (button.matches("[data-download-save]"))
     return downloadSaveFile(currentState);
-  if (button.matches("[data-toggle-income]"))
+  if (button.matches("[data-toggle-income]")) {
     currentState.app.isIncomeOpen = currentState.app.isIncomeOpen === false;
-  else if (button.matches("[data-toggle-budget-board]"))
-    currentState.app.isBudgetBoardOpen =
-      currentState.app.isBudgetBoardOpen === false;
-  else if (button.matches("[data-add-income]")) {
+    button.closest("section").querySelector(".collapsible-body").hidden =
+      !currentState.app.isIncomeOpen;
+    button.textContent = `${platform.isAndroid ? "Tap" : "Click"} To ${currentState.app.isIncomeOpen ? "Collapse" : "Expand"}`;
+    button.setAttribute("aria-expanded", String(currentState.app.isIncomeOpen));
+    saveState(currentState);
+    window.budgetMobile?.checkpoint();
+    return;
+  } else if (button.matches("[data-add-income]")) {
     const income = {
       id: id(),
       name: "",
@@ -1244,9 +1504,18 @@ app?.addEventListener("click", (event) => {
       );
     currentState.app.editingCategoryId = "";
     currentState.app.draftCategoryId = "";
-  } else if (button.matches("[data-edit-income]"))
+  } else if (button.matches("[data-edit-income]")) {
     currentState.app.editingIncomeId = button.dataset.editIncome;
-  else if (button.matches("[data-cancel-edit-income]")) {
+    document.querySelectorAll("[data-edit-income-form]").forEach((form) => {
+      form.hidden =
+        form.dataset.editIncomeForm !== currentState.app.editingIncomeId;
+      if (!form.hidden) form.elements.name.focus();
+    });
+    updateDragAvailability();
+    saveState(currentState);
+    window.budgetMobile?.checkpoint();
+    return;
+  } else if (button.matches("[data-cancel-edit-income]")) {
     if (currentState.app.draftIncomeId === currentState.app.editingIncomeId)
       currentState.incomes = currentState.incomes.filter(
         (income) => income.id !== currentState.app.draftIncomeId,
@@ -1271,6 +1540,7 @@ app?.addEventListener("click", (event) => {
       (item) => item.id !== button.dataset.removeIncome,
     );
   else if (button.matches("[data-remove-category]")) {
+    delete currentState.app.collapsedCategories?.[button.dataset.removeCategory];
     currentState.categories = currentState.categories.filter(
       (item) => item.id !== button.dataset.removeCategory,
     );
@@ -1317,6 +1587,10 @@ const clearDropTargets = () => {
 };
 
 app?.addEventListener("dragstart", (event) => {
+  if (hasOpenBudgetEditor()) {
+    event.preventDefault();
+    return;
+  }
   const expenseItem = event.target.closest("[data-expense-id]");
   const group = event.target.closest("[data-group-name]");
   const category = event.target.closest("[data-category-id]");
@@ -1548,15 +1822,19 @@ app?.addEventListener("dragover", (event) => {
   if (
     source &&
     destination &&
-    source.group &&
-    source.group === destination.group &&
+    destination.group &&
     source.categoryId === destination.categoryId &&
     source.id !== destination.id
   ) {
     const rect = item.getBoundingClientRect();
+    const position = (event.clientY - rect.top) / rect.height;
     withinGroupDropMode =
-      event.clientY < rect.top + rect.height / 2 ? "before" : "after";
-    item.classList.add(`item-drop-${withinGroupDropMode}`);
+      position < 0.25 ? "before" : position > 0.75 ? "after" : "combine";
+    item.classList.add(
+      withinGroupDropMode === "combine"
+        ? "item-combine-target"
+        : `item-drop-${withinGroupDropMode}`,
+    );
   } else if (
     source &&
     group &&
@@ -1692,16 +1970,16 @@ app?.addEventListener("drop", (event) => {
     if (
       source &&
       destination &&
-      source.group &&
-      source.group === destination.group &&
+      destination.group &&
       source.categoryId === destination.categoryId &&
-      moveItemWithinGroup(
+      budget.moveBudgetEntry(
         currentState,
-        source.categoryId,
-        source.group,
-        source.id,
-        destination.id,
-        nextWithinGroupDropMode,
+        { type: "item", categoryId: source.categoryId, id: source.id },
+        {
+          categoryId: destination.categoryId,
+          target: { type: "item", id: destination.id },
+          placement: nextWithinGroupDropMode,
+        },
       )
     ) {
       currentState.app.expenseSorts ||= {};
@@ -1757,7 +2035,6 @@ app?.addEventListener("drop", (event) => {
       target.dataset.categoryId ||
       target.closest("[data-category-id]")?.dataset.categoryId;
     if (source && source.categoryId === targetCategoryId && destinationGroup) {
-      source.group = "";
       if (
         moveItemBesideGroup(
           currentState,
@@ -2024,6 +2301,31 @@ app?.addEventListener("drop", (event) => {
       target.closest("[data-category-id]")?.dataset.categoryId;
     if (!source || target.dataset.expenseId === sourceId || !targetCategoryId)
       return;
+    if (
+      destinationGroup &&
+      (source.categoryId !== targetCategoryId ||
+        source.group !== destinationGroup)
+    ) {
+      const sourceCategoryId = source.categoryId;
+      if (
+        !budget.moveBudgetEntry(
+          currentState,
+          { type: "item", categoryId: sourceCategoryId, id: source.id },
+          {
+            categoryId: targetCategoryId,
+            group: destinationGroup,
+            placement: "append",
+          },
+        )
+      )
+        return;
+      currentState.app.expenseSorts ||= {};
+      currentState.app.expenseSorts[sourceCategoryId] = "manual";
+      currentState.app.expenseSorts[targetCategoryId] = "manual";
+      saveState(currentState);
+      render(currentState);
+      return;
+    }
     if (source.categoryId !== targetCategoryId) {
       const sourceCategoryId = source.categoryId;
       source.categoryId = targetCategoryId;
@@ -2037,7 +2339,6 @@ app?.addEventListener("drop", (event) => {
             )
             .map((item) => item.sortOrder || 0),
         ) + 1;
-      if (destinationGroup) source.group = destinationGroup;
       currentState.app.expenseSorts ||= {};
       currentState.app.expenseSorts[sourceCategoryId] = "manual";
       currentState.app.expenseSorts[targetCategoryId] = "manual";
@@ -2091,25 +2392,6 @@ app?.addEventListener("drop", (event) => {
         return;
       currentState.app.expenseSorts ||= {};
       currentState.app.expenseSorts[source.categoryId] = "manual";
-    } else if (
-      destinationGroup &&
-      source.categoryId === targetCategoryId &&
-      source.group !== destinationGroup
-    ) {
-      source.group = destinationGroup;
-      if (destination) {
-        const order = source.sortOrder;
-        source.sortOrder = destination.sortOrder;
-        destination.sortOrder = order;
-      } else
-        source.sortOrder =
-          Math.max(
-            ...currentState.expenses
-              .filter((item) => item.categoryId === source.categoryId)
-              .map((item) => item.sortOrder || 0),
-          ) + 1;
-      currentState.app.expenseSorts ||= {};
-      currentState.app.expenseSorts[source.categoryId] = "manual";
     } else if (destination) {
       const order = source.sortOrder;
       source.sortOrder = destination.sortOrder;
@@ -2137,6 +2419,61 @@ app?.addEventListener("drop", (event) => {
   render(currentState);
 });
 
-currentState = loadState();
-saveState(currentState);
-render(currentState);
+window.addEventListener("budget-document-result", (event) => {
+  const result = event.detail;
+  if (result.error) window.alert(result.error);
+  else if (result.operation === "import") importBudget(result.value);
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushSave();
+});
+window.addEventListener("pagehide", flushSave);
+
+async function startApp() {
+  try {
+    currentState = await loadState();
+    currentState.app.editingIncomeId = "";
+    render(currentState);
+    await window.budgetMobile?.restore();
+  } catch (error) {
+    const card = document.createElement("section");
+    card.className = "card recovery-card";
+    const heading = document.createElement("h1");
+    heading.textContent = "Budget Recovery";
+    const message = document.createElement("p");
+    message.textContent = `Your saved budget could not be loaded and has not been overwritten. ${error.message}`;
+    const retry = document.createElement("button");
+    retry.textContent = "Retry Loading";
+    retry.onclick = () => {
+      app.replaceChildren();
+      startApp();
+    };
+    const recover = document.createElement(
+      platform.isAndroid ? "button" : "input",
+    );
+    if (platform.isAndroid) {
+      recover.textContent = "Import Backup";
+      recover.onclick = async () => {
+        try {
+          await importBudget(await platform.importFile());
+        } catch (error) {
+          window.alert(error.message);
+        }
+      };
+    } else {
+      recover.type = "file";
+      recover.accept = "application/json,.json";
+      recover.setAttribute("aria-label", "Import Backup");
+      recover.onchange = async () => {
+        if (recover.files[0]) await importBudget(await recover.files[0].text());
+      };
+    }
+    card.append(heading, message, retry, recover);
+    app.replaceChildren(card);
+  }
+  await platform.ready();
+  window.budgetReady = true;
+}
+
+startApp();
