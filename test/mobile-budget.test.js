@@ -4,6 +4,52 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
+test("category gaps resolve horizontal and vertical insertion without swapping", () => {
+  const { budget } = fixture();
+  const rects = [
+    { left: 0, right: 100, top: 0, bottom: 100 },
+    { left: 116, right: 216, top: 0, bottom: 100 },
+    { left: 0, right: 100, top: 116, bottom: 216 },
+  ];
+  for (const [x, y, index, placement, axis] of [
+    [104, 50, 0, "after", "horizontal"],
+    [112, 50, 1, "before", "horizontal"],
+    [50, 104, 0, "after", "vertical"],
+    [50, 112, 2, "before", "vertical"],
+  ]) {
+    const result = budget.getCategoryGapDestination(rects, x, y);
+    assert.equal(result.index, index);
+    assert.equal(result.placement, placement);
+    assert.equal(result.axis, axis);
+  }
+  assert.equal(budget.getCategoryGapDestination(rects, 50, 50), null);
+  assert.equal(budget.getCategoryGapDestination(rects, 250, 250), null);
+  assert.equal(budget.getCategoryGapDestination([], 50, 50), null);
+});
+
+test("gaps between sibling entries target their nearest insertion edge", () => {
+  const { budget } = fixture();
+  const rects = [{ top: 0, bottom: 40 }, { top: 48, bottom: 100 }, { top: 116, bottom: 180 }];
+  assert.equal(budget.getEntryGapIndex(rects, 42), 0);
+  assert.equal(budget.getEntryGapIndex(rects, 46), 1);
+  assert.equal(budget.getEntryGapIndex(rects, 105), 1);
+  assert.equal(budget.getEntryGapIndex(rects, 113), 2);
+  for (const y of [-1, 20, 70, 181])
+    assert.equal(budget.getEntryGapIndex(rects, y), -1);
+  assert.equal(budget.getEntryGapIndex([], 5), -1);
+});
+
+test("entry insertion uses the outer thirds and keeps the center for grouping", () => {
+  const { budget } = fixture();
+  for (const position of [0, 0.25, 0.32])
+    assert.equal(budget.getEntryDropPlacement(position), "before");
+  for (const position of [1 / 3, 0.5, 2 / 3])
+    assert.equal(budget.getEntryDropPlacement(position), "combine");
+  for (const position of [0.68, 0.75, 1])
+    assert.equal(budget.getEntryDropPlacement(position), "after");
+  assert.equal(budget.getEntryDropPlacement(0.5, "into"), "into");
+});
+
 function fixture() {
   const context = { window: {} };
   vm.runInNewContext(
@@ -447,7 +493,7 @@ test("malformed save fields and unsafe identifiers are rejected before replaceme
 });
 
 test("all shared scripts parse together without conflicting globals", () => {
-  const source = ["budget", "platform", "app-template", "main", "mobile"]
+  const source = ["budget", "platform", "history", "app-template", "main", "mobile"]
     .map((name) =>
       fs.readFileSync(path.join(__dirname, `../src/${name}.js`), "utf8"),
     )

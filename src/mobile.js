@@ -1,5 +1,6 @@
 (() => {
   const android = window.budgetPlatform.isAndroid;
+  const mobile = window.budgetPlatform.isMobile;
   let sessionTimer;
   let restoring = false;
   let initialized = !android;
@@ -11,10 +12,10 @@
     const actions = header.querySelector(".actions");
     const help = header.querySelector(".save-help");
     const status = header.querySelector("[data-save-status]");
-    const mobile = android || window.innerWidth <= 720;
-    if (help) (mobile ? header : actions).append(help);
+    const compact = mobile || window.innerWidth <= 720;
+    if (help) (compact ? header : actions).append(help);
     if (status) {
-      if (mobile) header.querySelector(".app-version").append(status);
+      if (compact) header.querySelector(".app-version").append(status);
       else actions.prepend(status);
     }
   }
@@ -43,7 +44,7 @@
           String(button.textContent.toLowerCase().includes("collapse")),
         );
       });
-    if (!android) {
+    if (!mobile) {
       addActionMenus();
       return;
     }
@@ -123,7 +124,7 @@
       actions.prepend(move);
     });
     const file = document.querySelector("[data-import-save]");
-    if (file) {
+    if (file && android) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "secondary";
@@ -155,16 +156,16 @@
     const help = document.querySelector(".save-help");
     if (help)
       help.textContent =
-        "Saved on this device. Export a backup; importing replaces your budget. Browser and app budgets do not sync.";
+        "Saved in this browser. Export a backup; importing replaces your budget. Browser and app budgets do not sync.";
     document.querySelectorAll(".faq-question").forEach((question) => {
       const title = question.querySelector("summary")?.textContent;
-      if (title?.includes("saving, downloading")) {
+      if (android && title?.includes("saving, downloading")) {
         question.querySelector("summary").textContent =
           "How does saving, exporting, And importing Work?";
         question.querySelectorAll("p")[0].textContent =
-          "Your budget saves automatically in this app's private storage. Export Save File creates a JSON backup at a location you choose. Import Save File restores a compatible MyBudgeter backup after confirmation. Browser and app budgets are separate; transfer them using export and import.";
+          "Your budget saves automatically in this app's private storage on this device. Export Save File creates a JSON backup at a location you choose. Import Save File replaces your current budget with a compatible MyBudgeter backup after confirmation. Browser and app budgets do not sync; transfer them using export and import.";
       }
-      if (title?.includes("stored and who")) {
+      if (android && title?.includes("stored and who")) {
         const paragraphs = question.querySelectorAll("p");
         paragraphs[0].textContent =
           "Your working budget is stored privately on this device. My Budget Planner has no server, account, or automatic cloud backup.";
@@ -292,7 +293,7 @@
   let dropTarget;
   let destination;
   const dragStatus = document.createElement("span");
-  if (android) {
+  if (mobile) {
     dragStatus.className = "drag-status";
     dragStatus.setAttribute("role", "status");
     document.body.append(dragStatus);
@@ -364,24 +365,28 @@
     dropTarget = destination = null;
     dragStatus.textContent = "Move over a destination";
     const hit = document.elementFromPoint(gesture.x, gesture.y);
-    const category = hit?.closest(".category-column");
+    const categoryGap =
+      gesture.source.type === "category"
+        ? getCategoryGapTarget(hit, gesture.x, gesture.y)
+        : null;
+    const category = categoryGap?.node || hit?.closest(".category-column");
     if (!category) return;
     const source = gesture.source;
     const node =
       source.type === "category"
         ? category
-        : hit.closest(".expense-item, .item-group") || category;
+        : getEntryGapTarget(hit, gesture.y) ||
+          hit.closest(".expense-item, .item-group") ||
+          category;
     if (gesture.node === node || gesture.node.contains(node)) return;
     const rect = node.getBoundingClientRect();
     const fraction = (gesture.y - rect.top) / rect.height;
     const placement =
-      fraction < 0.25
-        ? "before"
-        : fraction > 0.75
-          ? "after"
-          : source.type === "category"
-            ? "swap"
-            : "combine";
+      categoryGap?.placement ||
+      budget.getEntryDropPlacement(
+        fraction,
+        source.type === "category" ? "swap" : "combine",
+      );
     const candidate = {
       categoryId: category.dataset.categoryId,
       placement:
@@ -432,7 +437,7 @@
     scrollFrame = requestAnimationFrame(scrollDrag);
   }
 
-  if (android) {
+  if (mobile) {
     document.addEventListener("keydown", (event) => {
       if (
         hasOpenBudgetEditor() ||
@@ -910,7 +915,7 @@
     { passive: true },
   );
   document.addEventListener("focusin", (event) => {
-    if (android && event.target.matches("input,textarea,select")) {
+    if (mobile && event.target.matches("input,textarea,select")) {
       setTimeout(
         () =>
           event.target.scrollIntoView({ block: "nearest", behavior: "smooth" }),

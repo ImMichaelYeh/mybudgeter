@@ -7,6 +7,7 @@ let saveTimer;
 let saveQueue = Promise.resolve();
 let saveError = "";
 let saveRevision = 0;
+let activityHistory;
 let draggedType = "";
 let draggedExpenseId = "";
 let draggedGroupName = "";
@@ -588,7 +589,8 @@ async function loadState() {
     : budget.createEmptyState();
 }
 
-function saveState(state) {
+function saveState(state, recordHistory = true) {
+  if (recordHistory) activityHistory?.record(state);
   pendingSave = {
     value: JSON.stringify(budget.createSavePayload(state)),
     revision: ++saveRevision,
@@ -651,6 +653,9 @@ async function importBudget(value) {
     pendingSave = null;
     saveError = "";
     currentState = replacement;
+    if (!platform.isMobile && !activityHistory)
+      activityHistory = window.budgetHistory.create(currentState);
+    else activityHistory?.record(currentState);
     render(currentState);
     showSaved();
     window.budgetMobile?.checkpoint(true);
@@ -662,10 +667,10 @@ async function importBudget(value) {
   }
 }
 
-function showSaved() {
+function showSaved(message = "Saved") {
   const status = document.querySelector("[data-save-status]");
   if (!status) return;
-  status.textContent = "Saved";
+  status.textContent = message;
   status.setAttribute("role", "status");
   status.classList.add("visible");
   setTimeout(() => status.classList.remove("visible"), 1400);
@@ -673,7 +678,7 @@ function showSaved() {
 
 function render(state) {
   const scrollPosition = window.scrollY;
-  const mobile = platform.isAndroid || window.innerWidth <= 720;
+  const mobile = platform.isMobile || window.innerWidth <= 720;
   const anchor = mobile
     ? [...app.querySelectorAll(".expense-item")].find(
         (element) => element.getBoundingClientRect().bottom > 0,
@@ -817,7 +822,7 @@ function wireEvents(state) {
     const update = () => {
       const isOpen = state.app[stateKey] !== false;
       toggle.textContent =
-        (platform.isAndroid ? "Tap" : "Click") +
+        (platform.isMobile ? "Tap" : "Click") +
         " To " +
         (isOpen ? "Collapse" : "Expand");
       toggle.setAttribute("aria-expanded", String(isOpen));
@@ -906,7 +911,7 @@ function wireEvents(state) {
   faqDetails.open = state.app.isFaqOpen === true;
   const updateFaq = () => {
     faqDetails.querySelector("summary span").textContent =
-      (platform.isAndroid ? "Tap" : "Click") +
+      (platform.isMobile ? "Tap" : "Click") +
       " To " +
       (faqDetails.open ? "Collapse" : "Expand");
   };
@@ -920,7 +925,7 @@ function wireEvents(state) {
     window.budgetMobile?.checkpoint();
   });
   const saveActions = document.querySelector("header .actions");
-  if (saveActions) {
+  if (saveActions && !platform.isAndroid) {
     const help = document.createElement("p");
     help.className = "save-help";
     help.innerHTML =
@@ -982,7 +987,7 @@ function wireEvents(state) {
     categoryMeta?.append(periodLabel);
     updateBoardPeriod(state);
   }
-  if (board && !platform.isAndroid) {
+  if (board && !platform.isMobile) {
     board.style.setProperty("--categories-per-row", state.app.categoriesPerRow);
     const layoutLabel = document.createElement("label");
     layoutLabel.className = "board-layout-control";
@@ -1219,7 +1224,7 @@ function wireEvents(state) {
     );
     if (!category) return;
     const saveDraft = () => {
-      if (platform.isAndroid) return;
+      if (platform.isMobile) return;
       category.name = form.elements.name.value;
       category.percentage = Math.max(
         0,
@@ -1535,7 +1540,7 @@ app?.addEventListener("click", (event) => {
     currentState.app.isIncomeOpen = currentState.app.isIncomeOpen === false;
     button.closest("section").querySelector(".collapsible-body").hidden =
       !currentState.app.isIncomeOpen;
-    button.textContent = `${platform.isAndroid ? "Tap" : "Click"} To ${currentState.app.isIncomeOpen ? "Collapse" : "Expand"}`;
+    button.textContent = `${platform.isMobile ? "Tap" : "Click"} To ${currentState.app.isIncomeOpen ? "Collapse" : "Expand"}`;
     button.setAttribute("aria-expanded", String(currentState.app.isIncomeOpen));
     saveState(currentState);
     window.budgetMobile?.checkpoint();
@@ -1698,10 +1703,49 @@ app?.addEventListener("dragstart", (event) => {
   );
 });
 
+function getCategoryGapTarget(hit, x, y) {
+  if (!hit?.matches(".board")) return null;
+  const categories = [...hit.querySelectorAll(":scope > .category-column")];
+  const gap = budget.getCategoryGapDestination(
+    categories.map((category) => category.getBoundingClientRect()),
+    x,
+    y,
+  );
+  return gap ? { ...gap, node: categories[gap.index] } : null;
+}
+
+function getEntryGapTarget(hit, y) {
+  if (!hit?.matches(".expense-list, .item-group-items")) return null;
+  const entries = [...hit.children].filter((entry) =>
+    entry.matches(".expense-item, .item-group"),
+  );
+  const index = budget.getEntryGapIndex(
+    entries.map((entry) => entry.getBoundingClientRect()),
+    y,
+  );
+  return entries[index] || null;
+}
+
 app?.addEventListener("dragover", (event) => {
-  const category = event.target.closest("[data-category-id]");
-  const item = event.target.closest("[data-expense-id]");
-  const group = event.target.closest("[data-group-name]");
+  const gapTarget =
+    draggedType !== "category"
+      ? getEntryGapTarget(event.target, event.clientY)
+      : null;
+  const categoryGap =
+    draggedType === "category"
+      ? getCategoryGapTarget(event.target, event.clientX, event.clientY)
+      : null;
+  const category = categoryGap?.node || event.target.closest("[data-category-id]");
+  const item = gapTarget
+    ? gapTarget.matches(".expense-item")
+      ? gapTarget
+      : null
+    : event.target.closest("[data-expense-id]");
+  const group = gapTarget
+    ? gapTarget.matches(".item-group")
+      ? gapTarget
+      : null
+    : event.target.closest("[data-group-name]");
   if (
     draggedType === "category" &&
     category &&
@@ -1709,9 +1753,18 @@ app?.addEventListener("dragover", (event) => {
   ) {
     event.preventDefault();
     const rect = category.getBoundingClientRect();
-    const position = (event.clientX - rect.left) / rect.width;
+    const axis =
+      categoryGap?.axis ||
+      (category.closest(".board").dataset.categoriesPerRow === "1"
+        ? "vertical"
+        : "horizontal");
+    const position =
+      axis === "vertical"
+        ? (event.clientY - rect.top) / rect.height
+        : (event.clientX - rect.left) / rect.width;
     categoryDropMode =
-      position < 0.25 ? "before" : position > 0.75 ? "after" : "swap";
+      categoryGap?.placement || budget.getEntryDropPlacement(position, "swap");
+    category.dataset.categoryDropAxis = axis;
     document
       .querySelectorAll(
         ".category-drop-before, .category-drop-after, .category-swap-target",
@@ -1741,8 +1794,7 @@ app?.addEventListener("dragover", (event) => {
     if (dropTarget) {
       const rect = dropTarget.getBoundingClientRect();
       const position = (event.clientY - rect.top) / rect.height;
-      crossCategoryDropMode =
-        position < 0.25 ? "before" : position > 0.75 ? "after" : "into";
+      crossCategoryDropMode = budget.getEntryDropPlacement(position, "into");
       document
         .querySelectorAll(
           ".item-drop-before, .item-drop-after, .group-drop-before, .group-drop-after, .category-transfer-target",
@@ -1803,10 +1855,10 @@ app?.addEventListener("dragover", (event) => {
       const position =
         (event.clientY - group.getBoundingClientRect().top) /
         group.getBoundingClientRect().height;
-      if (position < 0.25) {
+      if (budget.getEntryDropPlacement(position) === "before") {
         groupItemDropMode = "before";
         group.classList.add("item-drop-before");
-      } else if (position > 0.75) {
+      } else if (budget.getEntryDropPlacement(position) === "after") {
         groupItemDropMode = "after";
         group.classList.add("item-drop-after");
       } else {
@@ -1816,10 +1868,10 @@ app?.addEventListener("dragover", (event) => {
     } else {
       const rect = item.getBoundingClientRect();
       const position = (event.clientY - rect.top) / rect.height;
-      if (position < 0.25) {
+      if (budget.getEntryDropPlacement(position) === "before") {
         groupItemDropMode = "before";
         item.classList.add("group-drop-before");
-      } else if (position > 0.75) {
+      } else if (budget.getEntryDropPlacement(position) === "after") {
         groupItemDropMode = "after";
         item.classList.add("group-drop-after");
       } else {
@@ -1840,8 +1892,7 @@ app?.addEventListener("dragover", (event) => {
     if (dropTarget) {
       const rect = dropTarget.getBoundingClientRect();
       const position = (event.clientY - rect.top) / rect.height;
-      crossCategoryDropMode =
-        position < 0.25 ? "before" : position > 0.75 ? "after" : "into";
+      crossCategoryDropMode = budget.getEntryDropPlacement(position, "into");
       document
         .querySelectorAll(
           ".item-drop-before, .item-drop-after, .group-drop-before, .group-drop-after, .category-transfer-target",
@@ -1904,8 +1955,7 @@ app?.addEventListener("dragover", (event) => {
   ) {
     const rect = item.getBoundingClientRect();
     const position = (event.clientY - rect.top) / rect.height;
-    withinGroupDropMode =
-      position < 0.25 ? "before" : position > 0.75 ? "after" : "combine";
+    withinGroupDropMode = budget.getEntryDropPlacement(position);
     item.classList.add(
       withinGroupDropMode === "combine"
         ? "item-combine-target"
@@ -1920,10 +1970,10 @@ app?.addEventListener("dragover", (event) => {
     const position =
       (event.clientY - group.getBoundingClientRect().top) /
       group.getBoundingClientRect().height;
-    if (position < 0.25) {
+    if (budget.getEntryDropPlacement(position) === "before") {
       itemGroupDropMode = "before";
       group.classList.add("item-drop-before");
-    } else if (position > 0.75) {
+    } else if (budget.getEntryDropPlacement(position) === "after") {
       itemGroupDropMode = "after";
       group.classList.add("item-drop-after");
     } else if (source.group !== group.dataset.groupName) {
@@ -1942,9 +1992,9 @@ app?.addEventListener("dragover", (event) => {
     const x = (event.clientX - rect.left) / rect.width;
     const y = (event.clientY - rect.top) / rect.height;
     itemDropMode =
-      x < 0.2 || y < 0.25
+      x < 0.2 || budget.getEntryDropPlacement(y) === "before"
         ? "before"
-        : x > 0.8 || y > 0.75
+        : x > 0.8 || budget.getEntryDropPlacement(y) === "after"
           ? "after"
           : "combine";
     item.classList.add(
@@ -1963,9 +2013,9 @@ app?.addEventListener("dragover", (event) => {
     const x = (event.clientX - rect.left) / rect.width;
     const y = (event.clientY - rect.top) / rect.height;
     itemDropMode =
-      x < 0.2 || y < 0.25
+      x < 0.2 || budget.getEntryDropPlacement(y) === "before"
         ? "before"
-        : x > 0.8 || y > 0.75
+        : x > 0.8 || budget.getEntryDropPlacement(y) === "after"
           ? "after"
           : "combine";
     item.classList.add(
@@ -2007,9 +2057,14 @@ app?.addEventListener("dragend", () => {
 });
 
 app?.addEventListener("drop", (event) => {
-  const target = event.target.closest(
-    "[data-group-name], [data-category-id], [data-expense-id]",
-  );
+  const target =
+    (draggedType === "category" &&
+      getCategoryGapTarget(event.target, event.clientX, event.clientY)?.node) ||
+    (draggedType !== "category" &&
+      getEntryGapTarget(event.target, event.clientY)) ||
+    event.target.closest(
+      "[data-group-name], [data-category-id], [data-expense-id]",
+    );
   const sourceGroup = draggedGroupName;
   const sourceGroupCategoryId = draggedGroupCategoryId;
   const groupDropMode = itemGroupDropMode;
@@ -2506,12 +2561,45 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("pagehide", flushSave);
 
+document.addEventListener("keydown", (event) => {
+  if (!activityHistory || app.inert || draggedType) return;
+  const action = window.budgetHistory.shortcut(event);
+  if (!action) return;
+  event.preventDefault();
+  if (!activityHistory[action === "undo" ? "canUndo" : "canRedo"]) return;
+  const dirty = [
+    ...app.querySelectorAll(
+      ".expense-form, .expense-edit-form, .category-edit-form, .group-rename-form, .income-edit-form:not([hidden])",
+    ),
+  ].some((form) =>
+    [...form.elements].some((field) =>
+      field.type === "checkbox"
+        ? field.checked !== field.defaultChecked
+        : field.matches("input,textarea,select") &&
+          field.value !==
+            (field.tagName === "SELECT"
+              ? [...field.options].find((option) => option.defaultSelected)?.value
+              : field.defaultValue),
+    ),
+  );
+  if (dirty && !window.confirm("Discard unsaved form changes before undo/redo?"))
+    return;
+  currentState = activityHistory[action]();
+  categoryToFocus = "";
+  elementToScrollTo = "";
+  saveState(currentState, false);
+  render(currentState);
+  showSaved(action === "undo" ? "Undone" : "Redone");
+});
+
 async function startApp() {
   try {
     const display = await platform.displayCurrency();
     budget.setCurrencyDisplay(display.locale, display.currency);
     currentState = await loadState();
     currentState.app.editingIncomeId = "";
+    if (!platform.isMobile)
+      activityHistory = window.budgetHistory.create(currentState);
     render(currentState);
     await window.budgetMobile?.restore();
   } catch (error) {

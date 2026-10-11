@@ -17,7 +17,7 @@ const SUMMARY_PERIODS = [
   ["quarterly", "Quarterly"],
   ["annual", "Annually"],
 ];
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.8.0";
 const SAVE_FILE_SCHEMA = `MyBudgeter-budget-v${APP_VERSION.split(".")[0]}`;
 const GROUP_SEPARATOR = " / ";
 const CATEGORY_COLORS = [
@@ -780,7 +780,61 @@ function moveBudgetEntry(state, source, destination) {
   return true;
 }
 
+function getEntryDropPlacement(position, center = "combine") {
+  if (position < 1 / 3) return "before";
+  if (position > 2 / 3) return "after";
+  return center;
+}
+
+function getEntryGapIndex(rects, y) {
+  for (let index = 1; index < rects.length; index++) {
+    const previous = rects[index - 1];
+    const next = rects[index];
+    if (y >= previous.bottom && y <= next.top) {
+      return y - previous.bottom < next.top - y ? index - 1 : index;
+    }
+  }
+  return -1;
+}
+
+function getCategoryGapDestination(rects, x, y) {
+  for (const axis of ["horizontal", "vertical"]) {
+    const horizontal = axis === "horizontal";
+    const candidates = rects
+      .map((rect, index) => ({ rect, index }))
+      .filter(({ rect }) =>
+        horizontal
+          ? y >= rect.top && y <= rect.bottom
+          : x >= rect.left && x <= rect.right,
+      )
+      .sort((a, b) =>
+        horizontal ? a.rect.left - b.rect.left : a.rect.top - b.rect.top,
+      );
+    const position = horizontal ? x : y;
+    const index = getEntryGapIndex(
+      candidates.map(({ rect }) =>
+        horizontal ? { top: rect.left, bottom: rect.right } : rect,
+      ),
+      position,
+    );
+    if (index < 0) continue;
+    const target = candidates[index];
+    return {
+      index: target.index,
+      axis,
+      placement:
+        position < (horizontal ? target.rect.left : target.rect.top)
+          ? "before"
+          : "after",
+    };
+  }
+  return null;
+}
+
 window.budget = {
+  getEntryDropPlacement,
+  getEntryGapIndex,
+  getCategoryGapDestination,
   APP_VERSION,
   SAVE_FILE_SCHEMA,
   FREQUENCY_OPTIONS,

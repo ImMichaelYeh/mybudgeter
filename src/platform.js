@@ -1,5 +1,12 @@
 (() => {
   const isAndroid = new URLSearchParams(location.search).get("android") === "1";
+  const userAgent = navigator.userAgent || "";
+  const isMobile =
+    isAndroid ||
+    /Android|iPhone|iPad|iPod|Mobi/i.test(userAgent) ||
+    (/Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1) ||
+    (!/Windows NT|Macintosh|X11|CrOS/i.test(userAgent) &&
+      navigator.userAgentData?.mobile === true);
   const requests = new Map();
   let sequence = 0;
   const storageKey = "MyBudgeter-save-v1";
@@ -299,6 +306,7 @@
 
   window.budgetPlatform = {
     isAndroid,
+    isMobile,
     displayCurrency: () =>
       isAndroid ? request("displayCurrency") : Promise.resolve(browserCurrency()),
     load: () =>
@@ -309,8 +317,24 @@
       isAndroid
         ? request("save", value)
         : Promise.resolve(localStorage.setItem(storageKey, value)),
-    importFile: () => request("import"),
-    exportFile: (value) => request("export", value),
+    importFile: () => {
+      if (
+        isAndroid &&
+        !window.confirm(
+          "Import Save File\n\nChoose a budget backup to restore. Importing replaces your current budget. Export a backup first if you want to keep it. Browser and app budgets do not sync automatically.\n\nContinue to choose a file?",
+        )
+      ) return Promise.resolve(null);
+      return request("import");
+    },
+    exportFile: (value) => {
+      if (
+        isAndroid &&
+        !window.confirm(
+          "Export Save File\n\nYour budget saves automatically on this device. Export creates a JSON backup at a location you choose and keeps your current budget unchanged. Keep the backup safe; it contains your budget information.\n\nContinue to save a backup?",
+        )
+      ) return Promise.resolve(null);
+      return request("export", value);
+    },
     loadSession: () =>
       isAndroid ? request("loadSession") : Promise.resolve(null),
     saveSession: (value) => request("session", value),
@@ -333,4 +357,5 @@
     },
   };
   document.documentElement.classList.toggle("android-app", isAndroid);
+  document.documentElement.classList.toggle("mobile-app", isMobile);
 })();

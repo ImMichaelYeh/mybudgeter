@@ -261,7 +261,7 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
       </div>
     </section>
 
-    <section class="card">
+    <section class="card budget-board-card">
       <div class="section-heading budget-board-heading"><div class="budget-board-title"><h2>Budget board</h2></div>${categoryForm}</div>
       <div class="category-form-meta">
         <span>Categories Total: ${categoryTotal.toFixed(1)}%</span>

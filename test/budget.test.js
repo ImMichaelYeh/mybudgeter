@@ -635,7 +635,7 @@ test("opening the app preserves section and group preferences and resets only In
   const rendered = [];
   const context = {
     budget,
-    window: {},
+    window: { budgetHistory: { create: () => ({}) } },
     loadState: async () => state,
     render: (value) =>
       rendered.push([value.app.isIncomeOpen, value.app.boardPeriod]),

@@ -122,8 +122,8 @@ class BudgetAppTest {
         assertEquals(0, evaluate(scenario, "document.querySelectorAll('[data-add-subgroup]').length"))
         assertEquals(true, evaluate(scenario, "(() => { const groups = [...document.querySelectorAll('.item-group')]; return groups.length > 0 && groups.every(group => Boolean(group.querySelector(':scope > [data-add-group-item]'))); })()"))
         assertEquals(0, evaluate(scenario, "document.querySelectorAll('.expense-item .tag').length"))
-        assertEquals(true, evaluate(scenario, "!document.documentElement.classList.contains('android-app') || [...document.querySelectorAll('.item-group-header')].every(header => { const row = header.querySelector('.group-name-row'); return row && getComputedStyle(row.querySelector('h4')).display === 'inline' && getComputedStyle(row.querySelector('.group-total')).display === 'inline'; })"))
-        assertEquals(true, evaluate(scenario, "[...document.querySelectorAll('.expense-item')].every(item => { const row = item.querySelector('.item-name-row'); return row && getComputedStyle(row.querySelector('strong')).display === 'inline' && getComputedStyle(row.querySelector('.small')).display === 'inline-block'; })"))
+        assertEquals(true, evaluate(scenario, "!document.documentElement.classList.contains('android-app') || [...document.querySelectorAll('.item-group-header')].every(header => { const row = header.querySelector('.group-name-row'); return row && getComputedStyle(row).display === (matchMedia('(orientation: portrait)').matches ? 'grid' : 'flex') && getComputedStyle(row.querySelector('.group-total')).textAlign === (matchMedia('(orientation: portrait)').matches ? 'left' : 'right'); })"))
+        assertEquals(true, evaluate(scenario, "[...document.querySelectorAll('.expense-item')].every(item => { const row = item.querySelector('.item-name-row'); return row && getComputedStyle(row).display === (document.documentElement.classList.contains('mobile-app') && matchMedia('(orientation: portrait)').matches ? 'grid' : 'flex') && row.querySelector('strong') && row.querySelector('.small'); })"))
     }
 
     private fun assertEntryMenu(scenario: ActivityScenario<MainActivity>, selector: String, expected: String) {
@@ -169,7 +169,7 @@ class BudgetAppTest {
         waitFor(scenario, "currentState.app.isFaqOpen === !window.originalFaqOpen")
         evaluate(scenario, "document.querySelector('.faq-card > details').open = window.originalFaqOpen;")
         waitFor(scenario, "currentState.app.isFaqOpen === window.originalFaqOpen")
-        assertEquals(true, evaluate(scenario, "(() => { const card = document.querySelector('.summary-card:not([hidden])'); const boxes = [...card.querySelectorAll('.summary-row')]; const mobile = document.documentElement.classList.contains('android-app') || innerWidth <= 720; return boxes.length === 5 && (mobile ? boxes[1].getBoundingClientRect().top > boxes[0].getBoundingClientRect().top && boxes.every(box => getComputedStyle(box).flexDirection === 'row' && getComputedStyle(box).borderRadius === '0px') : boxes[1].getBoundingClientRect().top === boxes[0].getBoundingClientRect().top && boxes.every(box => getComputedStyle(box).flexDirection === 'column')); })()"))
+        assertEquals(true, evaluate(scenario, "(() => { const card = document.querySelector('.summary-card:not([hidden])'); const boxes = [...card.querySelectorAll('.summary-row')]; const nativeLandscape = document.documentElement.classList.contains('android-app') && matchMedia('(orientation: landscape)').matches; const mobile = !nativeLandscape && (document.documentElement.classList.contains('mobile-app') || innerWidth <= 720); return boxes.length === 5 && (mobile ? boxes[1].getBoundingClientRect().top > boxes[0].getBoundingClientRect().top && boxes.every(box => getComputedStyle(box).flexDirection === 'row' && getComputedStyle(box).borderRadius === '0px') : boxes[1].getBoundingClientRect().top === boxes[0].getBoundingClientRect().top && boxes.every(box => getComputedStyle(box).flexDirection === 'column')); })()"))
         assertEquals(true, evaluate(scenario, "(() => { const selector = document.querySelector('[data-board-period-select]'); const original = selector.value; const summaryPeriod = currentState.app.summaryPeriod; const column = document.querySelector('[data-category-id]'); const valid = budget.SUMMARY_PERIODS.every(([period,label]) => { selector.value = period; selector.dispatchEvent(new Event('change',{bubbles:true})); const summary = budget.getBudgetSummary(currentState).categories.find(category => category.id === column.dataset.categoryId); const metrics = budget.getCategoryPeriodMetrics(summary, period); return column === document.querySelector('[data-category-id]') && column.querySelector('[data-target-label]').textContent === 'Budget' && column.querySelector('[data-category-target]').getAttribute('aria-label') === budget.formatMoney(metrics.target) && column.querySelector('[data-category-spent]').getAttribute('aria-label') === budget.formatMoney(metrics.spent) && column.querySelector('[data-category-remaining]').getAttribute('aria-label') === budget.formatMoney(metrics.remaining) && currentState.app.summaryPeriod === summaryPeriod && [...document.querySelectorAll('.group-total[data-monthly-total]')].every(total => total.getAttribute('aria-label') === budget.formatGroupTotal(Number(total.dataset.monthlyTotal), period)); }); selector.value = original; selector.dispatchEvent(new Event('change',{bubbles:true})); return valid; })()"))
         assertEquals(true, evaluate(scenario, "(() => { const grid = document.querySelector('.summary-grid-wide').getBoundingClientRect(); const section = document.querySelector('.summary-grid-wide').parentElement.getBoundingClientRect(); return Math.abs((grid.left - section.left) - (section.right - grid.right)) <= 2; })()"))
         assertEquals(true, evaluate(scenario, "(() => { const notes = document.querySelector('.notes-textarea'); const original = notes.value; notes.value = ''; notes.dispatchEvent(new Event('input',{bubbles:true})); const small = notes.getBoundingClientRect().height; notes.value = Array(40).fill('Long notes with enough text to wrap on a phone screen.').join('\\n'); notes.dispatchEvent(new Event('input',{bubbles:true})); const large = notes.getBoundingClientRect().height; const fits = notes.scrollHeight <= notes.clientHeight + 1; notes.value = ''; notes.dispatchEvent(new Event('input',{bubbles:true})); const shrank = Math.abs(notes.getBoundingClientRect().height - small) <= 1; notes.value = original; notes.dispatchEvent(new Event('input',{bubbles:true})); return small <= 80 && large > small * 4 && fits && shrank; })()"))
@@ -269,7 +269,7 @@ class BudgetAppTest {
         File(context.filesDir, "session.json").delete()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             waitFor(scenario, "window.budgetReady === true && Boolean(document.querySelector('[data-toggle-income]'))")
-            assertEquals("1.7.0", evaluate(scenario, "budget.APP_VERSION"))
+            assertEquals("1.8.0", evaluate(scenario, "budget.APP_VERSION"))
             assertEquals(false, evaluate(scenario, "currentState.app.isIncomeOpen"))
             assertEquals(true, evaluate(scenario, "document.querySelector('[data-add-income]').closest('.collapsible-body').hidden"))
             evaluate(scenario, "document.querySelector('[data-toggle-income]').click();")
@@ -392,6 +392,18 @@ class BudgetAppTest {
                 activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             }
             waitFor(scenario, "window.budgetReady === true && window.innerWidth > window.innerHeight")
+            assertEquals(true, evaluate(scenario, """
+                (() => {
+                  const boxes = [...document.querySelector('.summary-card:not([hidden])').querySelectorAll('.summary-row')];
+                  const circles = [...document.querySelectorAll('button.category-toggle, .column-header .entry-menu-toggle')];
+                  return boxes.length === 5 && boxes[0].getBoundingClientRect().top === boxes[1].getBoundingClientRect().top
+                    && boxes.every(box => getComputedStyle(box).flexDirection === 'column' && getComputedStyle(box).borderRadius === '12px' && getComputedStyle(box).borderBottomWidth === '1px')
+                    && circles.length > 0 && circles.every(button => {
+                      const rect = button.getBoundingClientRect();
+                      return rect.width === 48 && rect.height === 48 && getComputedStyle(button).borderRadius === '50%';
+                    });
+                })()
+            """.trimIndent()))
             assertEquals("Private notes", evaluate(scenario, "currentState.notes"))
             evaluate(scenario, """
                 currentState.expenses.push({id:'deep',name:'A very long recurring expense name that must wrap on narrow screens',amount:1000000,multiplier:1,frequency:'monthly',categoryId:'default-wants',group:'Home / Utilities / Electric / Meter / Billing / Account / History / Details',sortOrder:99});
@@ -494,7 +506,7 @@ class BudgetAppTest {
             assertEquals("Home", evaluate(scenario, "currentState.expenses.find(item => item.id === 'inside').group"))
             assertEquals("Home / Child", evaluate(scenario, "currentState.expenses.find(item => item.id === 'nested').group"))
             assertEquals(true, evaluate(scenario, "[...document.querySelectorAll('.expense-item')].every(item => { const text = item.querySelector(':scope > div:not(.actions)').getBoundingClientRect(); const actions = item.querySelector(':scope > .actions').getBoundingClientRect(); return actions.left >= text.right && actions.top < text.bottom && actions.bottom > text.top; })"))
-            assertEquals(true, evaluate(scenario, "[...document.querySelectorAll('.item-group-header')].every(header => { const toggle = header.querySelector('.group-toggle').getBoundingClientRect(); const name = header.querySelector('h4').getBoundingClientRect(); return Math.abs(toggle.width - 48) < 1 && Math.abs(toggle.height - 48) < 1 && name.left >= toggle.right && header.querySelector('.actions').getBoundingClientRect().left >= name.right && header.querySelector('.actions').getBoundingClientRect().top <= name.bottom && getComputedStyle(header.querySelector('h4')).textAlign === 'left' && parseFloat(getComputedStyle(header.querySelector('h4')).fontSize) >= 17; })"))
+            assertEquals(true, evaluate(scenario, "[...document.querySelectorAll('.item-group-header')].every(header => { const toggle = header.querySelector('.group-toggle').getBoundingClientRect(); const name = header.querySelector('h4').getBoundingClientRect(); return Math.abs(toggle.width - 48) < 1 && Math.abs(toggle.height - 48) < 1 && name.left >= toggle.right && header.querySelector('.actions').getBoundingClientRect().left >= name.right && header.querySelector('.actions').getBoundingClientRect().top <= name.bottom && getComputedStyle(header.querySelector('h4')).textAlign === 'left' && getComputedStyle(header.querySelector('h4')).fontSize === getComputedStyle(document.querySelector('.item-name-row > strong')).fontSize; })"))
             evaluate(scenario, "document.querySelector('[data-group-name=Home]').scrollIntoView({block:'start'});")
             SystemClock.sleep(200)
             InstrumentationRegistry.getInstrumentation().uiAutomation
@@ -561,7 +573,7 @@ class BudgetAppTest {
                 assertTrue("Android document picker did not open", found)
                 assertTrue(automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK))
             }
-            evaluate(scenario, "window.pickerDone = false; platform.importFile().then(value => { window.pickerValue = value; window.pickerDone = true; });")
+            evaluate(scenario, "window.confirm = () => true; window.pickerDone = false; platform.importFile().then(value => { window.pickerValue = value; window.pickerDone = true; });")
             cancelPicker()
             waitFor(scenario, "window.pickerDone === true && window.pickerValue === null")
             assertEquals(original, evaluate(scenario, "JSON.stringify(currentState)"))
@@ -572,11 +584,38 @@ class BudgetAppTest {
         }
     }
 
+    @Test fun phoneBrowserSharesAppInterfaceAndTouchOrganization() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            waitFor(scenario, "window.budgetReady === true")
+            scenario.onActivity { activity ->
+                findWeb(activity.window.decorView)!!.loadUrl("${MainActivity.ORIGIN}/assets/index.html")
+            }
+            waitFor(scenario, "window.budgetReady === true && budgetPlatform.isMobile && !budgetPlatform.isAndroid")
+            assertEquals(true, evaluate(scenario, "document.documentElement.classList.contains('mobile-app') && !document.documentElement.classList.contains('android-app') && !document.querySelector('.site-header') && !document.querySelector('.app-header > div:first-child > p') && Boolean(document.querySelector('input[data-import-save]'))"))
+            evaluate(scenario, "currentState = budget.createEmptyState(); currentState.expenses = [{id:'phone-a',name:'First',amount:10,multiplier:1,frequency:'monthly',categoryId:'default-needs',group:'',sortOrder:1},{id:'phone-b',name:'Second',amount:20,multiplier:1,frequency:'monthly',categoryId:'default-needs',group:'',sortOrder:2}]; render(currentState);")
+            assertEntryMenu(scenario, "[data-expense-id=phone-a]", "Move,Edit,Remove")
+            drag(scenario, "[data-expense-id=phone-a] strong", "[data-expense-id=phone-b]", 0.5)
+            assertEquals(true, evaluate(scenario, "currentState.expenses[0].group && currentState.expenses[0].group === currentState.expenses[1].group"))
+            evaluate(scenario, "window.browserPhoneSaved = false; flushSave().then(() => window.browserPhoneSaved = true);")
+            waitFor(scenario, "window.browserPhoneSaved === true")
+            assertEquals(true, evaluate(scenario, "Boolean(localStorage.getItem('MyBudgeter-save-v1')) && document.querySelector('.save-help').textContent.includes('this browser') && !document.querySelector('.save-help').textContent.includes('privately')"))
+            scenario.onActivity { activity ->
+                val web = findWeb(activity.window.decorView)!!
+                web.layoutParams = web.layoutParams.apply { width = (900 * activity.resources.displayMetrics.density).toInt() }
+                web.requestLayout()
+            }
+            SystemClock.sleep(200)
+            assertEquals(true, evaluate(scenario, "[...document.querySelectorAll('.category-column')].every((card,index,cards) => !index || card.getBoundingClientRect().top > cards[index-1].getBoundingClientRect().bottom) && !document.querySelector('.board-layout-control') && document.documentElement.scrollWidth <= innerWidth"))
+        }
+    }
+
     @Test fun browserModeRetainsDragHandlersAndCompatibleLocalStorage() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             waitFor(scenario, "window.budgetReady === true && Boolean(document.querySelector('[data-toggle-income]'))")
             scenario.onActivity { activity ->
-                findWeb(activity.window.decorView)!!.loadUrl("${MainActivity.ORIGIN}/assets/index.html")
+                val web = findWeb(activity.window.decorView)!!
+                web.settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/133.0.0.0 Safari/537.36"
+                web.loadUrl("${MainActivity.ORIGIN}/assets/index.html")
             }
             waitFor(scenario, "window.budgetPlatform?.isAndroid === false && Boolean(document.querySelector('[draggable]'))")
             assertEquals("Michael Yeh", evaluate(scenario, "document.querySelector('.site-brand').textContent"))

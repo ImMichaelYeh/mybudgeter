@@ -4,13 +4,33 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-function setup(android, language = "en-US") {
+test("Android omits header backup help while browsers retain it", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
+  const start = source.indexOf('  const saveActions = document.querySelector("header .actions");');
+  const end = source.indexOf("  const categoryMeta =", start);
+  assert.ok(start >= 0 && end > start);
+  for (const isAndroid of [true, false]) {
+    const children = [];
+    vm.runInNewContext(source.slice(start, end), {
+      platform: { isAndroid },
+      document: {
+        querySelector: () => ({ append: (element) => children.push(element) }),
+        createElement: () => ({}),
+      },
+    });
+    assert.equal(children.length, isAndroid ? 0 : 1);
+    if (!isAndroid) assert.match(children[0].innerHTML, /backup/);
+  }
+});
+
+function setup(android, language = "en-US", device = {}) {
   const messages = [];
   const values = new Map();
   const events = [];
   const context = {
-    navigator: { language },
+    navigator: { language, ...device },
     window: {
+      confirm: () => true,
       AndroidBudget: {
         postMessage: (value) => messages.push(JSON.parse(value)),
       },
@@ -49,6 +69,27 @@ test("browser adapter keeps the existing storage key", async () => {
   await platform.save("budget");
   assert.equal(values.get("MyBudgeter-save-v1"), "budget");
   assert.equal(await platform.load(), "budget");
+});
+
+test("phone browsers use the mobile interface without enabling native storage", async () => {
+  for (const device of [
+    { userAgent: "Mozilla Android Mobile" },
+    { userAgent: "Mozilla iPhone" },
+    { userAgent: "Mozilla Macintosh", maxTouchPoints: 5 },
+    { userAgentData: { mobile: true } },
+  ]) {
+    const { platform, values, messages } = setup(false, "en-US", device);
+    assert.equal(platform.isMobile, true);
+    assert.equal(platform.isAndroid, false);
+    await platform.save("browser budget");
+    assert.equal(await platform.load(), "browser budget");
+    assert.equal(values.get("MyBudgeter-save-v1"), "browser budget");
+    assert.equal(messages.length, 0);
+  }
+  assert.equal(setup(false, "en-US", { userAgent: "Mozilla Windows", maxTouchPoints: 5 }).platform.isMobile, false);
+  assert.equal(setup(false).platform.isMobile, false);
+  assert.equal(setup(false, "en-US", { userAgent: "Mozilla Windows NT", userAgentData: { mobile: true } }).platform.isMobile, false);
+  assert.equal(setup(true).platform.isMobile, true);
 });
 
 test("Android saves resolve only after native acknowledgement and surface failures", async () => {
@@ -99,6 +140,25 @@ test("browser currency follows explicit regions, inferred languages, and safe fa
   const { platform, context } = setup(false, "en-GB");
   context.Intl = { Locale: undefined };
   assert.equal((await platform.displayCurrency()).currency, "USD");
+});
+
+test("Android backup dialogs cancel before pickers or allow confirmed operations", async () => {
+  for (const operation of ["import", "export"]) {
+    const { platform, context, messages } = setup(true);
+    const prompts = [];
+    context.window.confirm = (message) => { prompts.push(message); return false; };
+    const run = () => operation === "import"
+      ? platform.importFile() : platform.exportFile("budget backup");
+    assert.equal(await run(), null);
+    assert.equal(messages.length, 0);
+    assert.match(prompts[0], operation === "import" ? /replaces your current budget/ : /JSON backup/);
+    context.window.confirm = () => true;
+    const confirmed = run();
+    assert.equal(messages[0].operation, operation);
+    if (operation === "export") assert.equal(messages[0].value, "budget backup");
+    platform.receive({ id: messages[0].id, operation, value: null });
+    assert.equal(await confirmed, null);
+  }
 });
 
 test("canceled native file selection resolves without a payload", async () => {
