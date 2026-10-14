@@ -944,7 +944,9 @@ function wireEvents(state) {
       const warning = document.createElement("span");
       warning.className = "message";
       warning.textContent = `Warning: category targets exceed 100% by ${overage.toFixed(1)}%.`;
-      document.querySelector(".budget-board-title")?.append(warning);
+      const title = document.querySelector(".budget-board-title");
+      title?.append(warning);
+      title?.closest(".budget-board-heading")?.classList.add("has-warning");
     }
   }
   summary.categories.forEach((category) => {

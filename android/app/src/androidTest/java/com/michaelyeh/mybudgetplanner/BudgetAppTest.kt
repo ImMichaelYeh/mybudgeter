@@ -269,7 +269,7 @@ class BudgetAppTest {
         File(context.filesDir, "session.json").delete()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             waitFor(scenario, "window.budgetReady === true && Boolean(document.querySelector('[data-toggle-income]'))")
-            assertEquals("1.8.0", evaluate(scenario, "budget.APP_VERSION"))
+            assertEquals("1.8.1", evaluate(scenario, "budget.APP_VERSION"))
             assertEquals(false, evaluate(scenario, "currentState.app.isIncomeOpen"))
             assertEquals(true, evaluate(scenario, "document.querySelector('[data-add-income]').closest('.collapsible-body').hidden"))
             evaluate(scenario, "document.querySelector('[data-toggle-income]').click();")

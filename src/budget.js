@@ -17,7 +17,7 @@ const SUMMARY_PERIODS = [
   ["quarterly", "Quarterly"],
   ["annual", "Annually"],
 ];
-const APP_VERSION = "1.8.0";
+const APP_VERSION = "1.8.1";
 const SAVE_FILE_SCHEMA = `MyBudgeter-budget-v${APP_VERSION.split(".")[0]}`;
 const GROUP_SEPARATOR = " / ";
 const CATEGORY_COLORS = [

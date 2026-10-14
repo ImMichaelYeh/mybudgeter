@@ -40,6 +40,7 @@ Read [shared behavior](implementation-shared.md) alongside this document. Androi
 - Storage uses MyBudgeter-save-v1, with a 150ms save debounce and pending-save flushes on page hide/background.
 
 - Desktop Complete Summary centers its frequency dropdown without visible Period text, using equal outer columns to match Budget Board. The accessible name remains Complete Summary Period. Phone browsers retain the title-row selector.
+- Header frequency selectors and Categories Per Row follow the shared compact dropdown sizing. Phone-browser header selectors use the same 30-pixel minimum height; editor controls retain their 48-pixel touch targets.
 - Phone browser item creation/editing retains the visible item position and avoids automatic smooth scrolling; desktop new-item scrolling remains available.
 
 - Phone browsers use the compact title-row backup icons and version beneath the title, matching Android while retaining browser download/import behavior. Desktop keeps labeled backup buttons and the inline version.

@@ -269,7 +269,7 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
       <div class="board" data-categories-per-row="${state.app.categoriesPerRow}">${board || '<div class="empty-state">No categories yet.</div>'}</div>
     </section>
 
-    <section class="card">
+    <section class="card complete-summary-card">
       <div class="section-heading summary-heading"><div><h2>Complete summary</h2></div>
         <label class="summary-period-control"><span>Period</span>
           <select aria-label="Complete Summary Period" data-summary-period-select>${periods.map(([key, label]) => `<option value="${key}" ${key === state.app.summaryPeriod ? "selected" : ""}>${label}</option>`).join("")}</select>

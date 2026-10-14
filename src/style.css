@@ -545,7 +545,7 @@ header .actions {
   }
 }
 .income-summary {
-  padding: 12px 14px 8px;
+  padding: 8px 14px;
 }
 .summary-inline {
   display: flex;
@@ -674,7 +674,7 @@ header .actions {
   background: var(--accent);
   color: white;
   border-radius: 16px;
-  padding: 14px;
+  padding: 14px 14px 8px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -844,7 +844,7 @@ button.secondary {
   font-size: 1rem;
 }
 .item-group > .group-add-button {
-  margin: 8px auto;
+  margin: 4px auto 8px;
 }
 .item-group .item-group {
   margin: 4px 8px;
@@ -1504,7 +1504,7 @@ textarea:focus-visible,
   min-width: 0;
 }
 .mobile-app .category-column {
-  padding: 14px;
+  padding: 14px 14px 8px;
 }
 .mobile-app .category-add-row > button {
   width: 100%;
@@ -2065,6 +2065,10 @@ button.category-toggle {
 .android-app .card {
   padding-top: 3px;
 }
+.android-app .complete-summary-card,
+.android-app .faq-card {
+  padding-top: 8px;
+}
 .android-app .app-header {
   margin-bottom: 8px;
 }
@@ -2074,15 +2078,13 @@ button.category-toggle {
 .android-app .section-heading {
   margin-bottom: 3px;
 }
+.android-app .budget-board-heading.has-warning h2 {
+  align-self: end;
+}
 .android-app .section-heading .hint {
   display: inline-flex;
   align-items: center;
   min-height: 32px;
-}
-.android-app .section-heading select,
-.android-app .board-period-control select {
-  min-height: 32px;
-  padding-block: 4px;
 }
 .android-app .faq-content {
   padding-top: 3px;
@@ -2093,6 +2095,7 @@ button.category-toggle {
 @media (orientation: portrait) {
   .android-app .budget-board-heading {
     margin-bottom: 0;
+    row-gap: 1px;
   }
 }
 @media (orientation: landscape) {
@@ -2100,6 +2103,16 @@ button.category-toggle {
     row-gap: 3px;
   }
   .android-app .budget-board-title .message {
-    margin-top: 3px;
+    margin-top: -2px;
   }
+}
+
+:root select[data-income-period-select],
+:root select[data-board-period-select],
+:root select[data-summary-period-select],
+:root .board-layout-control select {
+  min-height: 30px;
+  padding-top: 2px;
+  padding-bottom: 4px;
+  line-height: 1.25;
 }
