@@ -268,7 +268,7 @@
     "YT": "EUR",
     "ZA": "ZAR",
     "ZM": "ZMW",
-    "ZW": "ZWG"
+    "ZW": "ZWG",
   };
 
   function browserCurrency() {
@@ -285,7 +285,7 @@
     }
   }
 
-  function request(operation, value) {
+  function request(operation, value, budgetId) {
     return new Promise((resolve, reject) => {
       if (!window.AndroidBudget) {
         reject(new Error("Update Android System WebView and reopen the app."));
@@ -295,7 +295,7 @@
       requests.set(id, { resolve, reject });
       try {
         window.AndroidBudget.postMessage(
-          JSON.stringify({ id, operation, value }),
+          JSON.stringify({ id, operation, value, budgetId }),
         );
       } catch (error) {
         requests.delete(id);
@@ -308,7 +308,9 @@
     isAndroid,
     isMobile,
     displayCurrency: () =>
-      isAndroid ? request("displayCurrency") : Promise.resolve(browserCurrency()),
+      isAndroid
+        ? request("displayCurrency")
+        : Promise.resolve(browserCurrency()),
     load: () =>
       isAndroid
         ? request("load")
@@ -317,27 +319,36 @@
       isAndroid
         ? request("save", value)
         : Promise.resolve(localStorage.setItem(storageKey, value)),
-    importFile: () => {
+    importFile: (budgetId = "") => {
       if (
         isAndroid &&
         !window.confirm(
-          "Import Save File\n\nChoose a budget backup to restore. Importing replaces your current budget. Export a backup first if you want to keep it. Browser and app budgets do not sync automatically.\n\nContinue to choose a file?",
+          "Import Save File\n\nChoose a backup file to replace the active budget. Other budgets stay unchanged.\n\nExport first if you want to keep a copy.",
         )
-      ) return Promise.resolve(null);
-      return request("import");
+      )
+        return Promise.resolve(null);
+      return request("import", null, budgetId);
     },
-    exportFile: (value) => {
+    exportFile: (value, budgetId = "") => {
       if (
         isAndroid &&
         !window.confirm(
-          "Export Save File\n\nYour budget saves automatically on this device. Export creates a JSON backup at a location you choose and keeps your current budget unchanged. Keep the backup safe; it contains your budget information.\n\nContinue to save a backup?",
+          "Export Save File\n\nYour budgets autosave on this device.\n\nSave a backup of the active budget to a file. Your budget stays unchanged.",
         )
-      ) return Promise.resolve(null);
-      return request("export", value);
+      )
+        return Promise.resolve(null);
+      return request("export", value, budgetId);
     },
     loadSession: () =>
-      isAndroid ? request("loadSession") : Promise.resolve(null),
-    saveSession: (value) => request("session", value),
+      isAndroid
+        ? request("loadSession")
+        : Promise.resolve(localStorage.getItem("MyBudgeter-sessions-v1")),
+    saveSession: (value) =>
+      isAndroid
+        ? request("session", value)
+        : Promise.resolve(
+            localStorage.setItem("MyBudgeter-sessions-v1", value),
+          ),
     ready: () => (isAndroid ? request("ready") : Promise.resolve()),
     receive(response) {
       const pending = requests.get(response.id);

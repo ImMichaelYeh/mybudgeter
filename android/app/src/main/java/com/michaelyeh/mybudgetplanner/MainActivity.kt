@@ -33,12 +33,16 @@ class MainActivity : ComponentActivity() {
     private var pageReady = false
     private var importId: String? = null
     private var exportId: String? = null
+    private var importBudgetId: String? = null
+    private var exportBudgetId: String? = null
 
     private val openDocument = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val id = importId ?: return@registerForActivityResult
         importId = null
+        val budgetId = importBudgetId
+        importBudgetId = null
         writer.execute {
-            val response = result(id, "import")
+            val response = result(id, "import").put("budgetId", budgetId ?: "")
             try {
                 response.put("value", uri?.let { readDocument(it) } ?: JSONObject.NULL)
             } catch (error: Exception) {
@@ -53,8 +57,10 @@ class MainActivity : ComponentActivity() {
     ) { uri ->
         val id = exportId ?: return@registerForActivityResult
         exportId = null
+        val budgetId = exportBudgetId
+        exportBudgetId = null
         writer.execute {
-            val response = result(id, "export")
+            val response = result(id, "export").put("budgetId", budgetId ?: "")
             try {
                 if (uri != null) {
                     contentResolver.openOutputStream(uri, "wt")?.use { output ->
@@ -76,6 +82,8 @@ class MainActivity : ComponentActivity() {
         storage = BudgetStorage(filesDir)
         importId = savedInstanceState?.getString("importId")
         exportId = savedInstanceState?.getString("exportId")
+        importBudgetId = savedInstanceState?.getString("importBudgetId")
+        exportBudgetId = savedInstanceState?.getString("exportBudgetId")
         if (!supportsWebView()) {
             setContentView(TextView(this).apply {
                 text = getString(R.string.update_webview)
@@ -215,6 +223,7 @@ class MainActivity : ComponentActivity() {
                     reply(result(id, operation).put("error", "A file picker is already open."))
                 } else {
                     importId = id
+                    importBudgetId = request.optString("budgetId")
                     openDocument.launch(arrayOf("application/json", "text/plain", "application/octet-stream"))
                 }
             }
@@ -226,6 +235,7 @@ class MainActivity : ComponentActivity() {
                 val value = request.getString("value")
                 validateBudget(value)
                 exportId = id
+                exportBudgetId = request.optString("budgetId")
                 writer.execute {
                     try {
                         File(cacheDir, "export.json").writeText(value, Charsets.UTF_8)
@@ -246,7 +256,7 @@ class MainActivity : ComponentActivity() {
                         "loadSession" -> storage.loadSession()
                         "save" -> {
                             val json = request.getString("value")
-                            validateBudget(json)
+                            validateLibrary(json)
                             storage.save(json)
                             true
                         }
@@ -271,6 +281,30 @@ class MainActivity : ComponentActivity() {
         val json = JSONObject(value)
         require(json.getString("schema").equals("MyBudgeter-budget-v1", ignoreCase = true))
         for (key in listOf("incomes", "categories", "expenses")) json.getJSONArray(key)
+    }
+
+    private fun validateLibrary(value: String) {
+        val json = JSONObject(value)
+        if (json.optString("schema").equals("MyBudgeter-budget-v1", ignoreCase = true)) {
+            validateBudget(value)
+            return
+        }
+        require(json.getString("schema") == "MyBudgeter-library-v1")
+        val budgets = json.getJSONArray("budgets")
+        val ids = mutableSetOf<String>()
+        val names = mutableSetOf<String>()
+        for (index in 0 until budgets.length()) {
+            val entry = budgets.getJSONObject(index)
+            val id = entry.getString("id")
+            val name = entry.getString("name")
+            require(id.matches(Regex("[a-zA-Z0-9_-]+")) && ids.add(id))
+            require(id !in setOf("__proto__", "constructor", "prototype"))
+            require(name.isNotBlank() && name == name.trim() && name.length <= 100)
+            require(names.add(name.lowercase(java.util.Locale.ROOT)))
+            validateBudget(entry.getJSONObject("data").toString())
+        }
+        val active = json.getString("activeBudgetId")
+        require(if (budgets.length() == 0) active.isEmpty() else active in ids)
     }
 
     private fun readDocument(uri: Uri): String {
@@ -324,6 +358,8 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("importId", importId)
         outState.putString("exportId", exportId)
+        outState.putString("importBudgetId", importBudgetId)
+        outState.putString("exportBudgetId", exportBudgetId)
         super.onSaveInstanceState(outState)
     }
 

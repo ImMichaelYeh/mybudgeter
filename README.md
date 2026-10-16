@@ -4,13 +4,14 @@ MyBudgeter is a local budgeting board for browsers and Android. Add income sourc
 
 Key features include:
 
+- Multiple named budgets with a switcher, templates, rename, duplicate, delete, and separate persistent drafts.
 - Income sources with notes and configurable frequency.
 - Drag-and-drop budget categories, items, and groups.
 - Expense and savings categories with monthly targets, actual percentages, and summary totals.
 - Grouped items, recurring cost quantities, and a personal notes area.
 - Automatic local browser saving, plus download and import of save files for backup.
 
-Open `index.html` in a modern browser to use the app. Your budget is stored locally in that browser; download a save file regularly for a safe backup. Importing a save file replaces the current budget.
+Open `index.html` in a modern browser to use the app. Budgets are stored locally in that browser. Use the menu beside the budget name to manage them. Download a separate save file for each budget regularly; export and import affect only the active budget. New budgets default to the 50/30/20 strategy.
 
 ## Versioning
 

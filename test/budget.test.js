@@ -35,6 +35,37 @@ test("backup controls retain accessible names and separate mobile icon markup", 
   assert.equal((html.match(/class="backup-icon"/g) || []).length, 2);
   assert.equal((html.match(/class="backup-label"/g) || []).length, 2);
   assert.match(html, /class="button-like secondary" title="Import Save File"/);
+  assert.match(html, /<header class="site-header app-header"/);
+  assert.equal(html.includes("app-version"), false);
+  assert.equal(html.includes("My budget planner is designed"), false);
+  assert.match(html, /data-backup-help aria-label="Autosave and Backup Help" aria-expanded="false"/);
+  assert.match(html, /id="backup-help-tooltip" class="backup-help-tooltip" role="tooltip" hidden>Autosave is Enabled\./);
+});
+
+test("shared banner renders each active budget name safely and preserves the portfolio banner", () => {
+  const budget = loadBudget();
+  const state = budget.createEmptyState();
+  const context = { window: { budget } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../src/app-template.js"), "utf8"), context);
+  const render = (name) => context.window.renderApp(state, budget.getBudgetSummary(state), state.categories, [], name);
+  assert.match(render("Household"), /class="site-brand budget-banner-name">Household<\/h1>/);
+  assert.match(render("Travel & <Plans>"), /class="site-brand budget-banner-name">Travel &amp; &lt;Plans&gt;<\/h1>/);
+  assert.match(render(), /class="site-brand budget-banner-name">No Budget Selected<\/h1>/);
+  const preserved = render("Household").match(/<template data-portfolio-banner>([\s\S]*?)<\/template>/)[1];
+  assert.match(preserved, /<nav class="site-header" aria-label="Site navigation">/);
+  assert.match(preserved, /<a class="site-brand" href="https:\/\/immichaelyeh.github.io\/">Michael Yeh<\/a>/);
+});
+
+test("Android omits the help button while browsers keep it", () => {
+  const budget = loadBudget();
+  const state = budget.createEmptyState();
+  for (const isAndroid of [false, true]) {
+    const context = { window: { budget, budgetPlatform: { isAndroid } } };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../src/app-template.js"), "utf8"), context);
+    const html = context.window.renderApp(state, budget.getBudgetSummary(state), state.categories, []);
+    assert.equal(html.includes("data-backup-help"), !isAndroid);
+    assert.equal(html.includes('role="tooltip"'), !isAndroid);
+  }
 });
 
 test("income period selection calculates each frequency and round trips independently", () => {
@@ -239,7 +270,7 @@ test("item create and edit handlers save zero amounts and reject invalid amounts
   const main = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
   const handlers = main.slice(
     main.indexOf('  document.querySelectorAll(".expense-form")'),
-    main.indexOf('  document\n    .querySelector("[data-import-save]")'),
+    main.indexOf('  const importTargetBudgetId ='),
   );
   assert.ok(handlers.includes("[data-edit-expense-form]"));
   for (const isSavings of [false, true]) {
@@ -636,7 +667,12 @@ test("opening the app preserves section and group preferences and resets only In
   const context = {
     budget,
     window: { budgetHistory: { create: () => ({}) } },
-    loadState: async () => state,
+    loadState: async () => {
+      state.app.editingIncomeId = "";
+      return state;
+    },
+    activeBudget: () => ({ id: "existing" }),
+    app: { inert: false },
     render: (value) =>
       rendered.push([value.app.isIncomeOpen, value.app.boardPeriod]),
     platform: {

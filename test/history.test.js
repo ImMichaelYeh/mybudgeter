@@ -6,7 +6,7 @@ const vm = require("node:vm");
 
 function setup() {
   const context = { window: {} };
-  for (const file of ["budget.js", "history.js"])
+  for (const file of ["budget.js", "library.js", "history.js"])
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../src", file), "utf8"), context);
   const budget = context.window.budget;
   const state = budget.createEmptyState();
@@ -126,15 +126,18 @@ test("app undo autosaves, failed saves remain retryable, and only successful imp
   let failed = false;
   let confirmed = true;
   let keydown;
+  const historyStatus = { textContent: "" };
   Object.assign(context, {
     budget, currentState: state, activityHistory: history,
+    budgetCollection: context.window.budgetLibrary.add(context.window.budgetLibrary.normalize(null), "My Budget", state, "budget-one"),
+    budgetHistories: new Map(), budgetTransition: false, id: () => "import-recovery",
     saveRevision: 0, saveQueue: Promise.resolve(), saveError: "", saveTimer: null,
     pendingSave: null, draggedType: "", categoryToFocus: "", elementToScrollTo: "",
     setTimeout: () => 0, clearTimeout: () => {},
     render: () => {}, showStorageError: () => {},
     app: { inert: false, setAttribute: () => {}, removeAttribute: () => {}, querySelectorAll: () => [] },
     document: {
-      querySelector: () => null,
+      querySelector: (selector) => selector === "[data-history-status]" ? historyStatus : null,
       addEventListener: (_, handler) => { keydown = handler; },
     },
     platform: {
@@ -145,6 +148,8 @@ test("app undo autosaves, failed saves remain retryable, and only successful imp
       },
     },
   });
+  context.activeBudget = () => context.budgetCollection.budgets.find((entry) => entry.id === context.budgetCollection.activeBudgetId);
+  context.window.budgetMobile = { clearRecovery: async () => {}, checkpoint: async () => {} };
   context.window.confirm = () => confirmed;
   context.window.alert = () => {};
   vm.runInNewContext(
@@ -156,17 +161,20 @@ test("app undo autosaves, failed saves remain retryable, and only successful imp
   state.notes = "Change";
   context.saveState(state);
   await context.flushSave();
-  assert.equal(writes.at(-1).notes, "Change");
+  assert.equal(writes.at(-1).budgets[0].data.notes, "Change");
+  assert.equal(historyStatus.textContent, "", "successful autosave stays silent");
   failed = true;
   keydown({ key: "z", ctrlKey: true, preventDefault() {} });
   await context.flushSave();
   assert.equal(context.currentState.notes, "");
+  assert.equal(historyStatus.textContent, "Undone");
   assert.ok(context.pendingSave);
   failed = false;
   await context.flushSave();
-  assert.equal(writes.at(-1).notes, "");
+  assert.equal(writes.at(-1).budgets[0].data.notes, "");
   assert.equal(context.saveError, "");
   keydown({ key: "y", ctrlKey: true, preventDefault() {} });
+  assert.equal(historyStatus.textContent, "Redone");
   await context.flushSave();
   const imported = budget.createEmptyState();
   imported.notes = "Import";
@@ -188,5 +196,5 @@ test("app undo autosaves, failed saves remain retryable, and only successful imp
   keydown({ key: "y", ctrlKey: true, preventDefault() {} });
   keydown({ key: "y", ctrlKey: true, preventDefault() {} });
   await context.flushSave();
-  assert.equal(writes.at(-1).notes, "Import");
+  assert.equal(writes.at(-1).budgets[0].data.notes, "Import");
 });

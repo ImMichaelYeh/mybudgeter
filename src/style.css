@@ -63,27 +63,172 @@ button,
   font-size: 0.9rem;
   text-align: center;
 }
-.app-version {
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 400;
-  letter-spacing: 0;
+.app-footer-version {
+  margin-bottom: 4px;
 }
-
 .app-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  width: min(var(--content-width), 100%);
-  margin: 1.5rem auto 20px;
+  --header-control-size: 40px;
+  flex-wrap: wrap;
+  gap: 8px 16px;
 }
-.app-header h1 {
-  margin: 0 0 6px;
-  color: #fff;
+.site-header.app-header {
+  margin-bottom: 16px;
+}
+.budget-heading {
+  display: flex;
+  align-items: center;
+  flex: 1 1 0;
+  gap: 12px;
+  min-width: 0;
+}
+.app-header .actions > button,
+.app-header .actions > .button-like,
+.budget-menu-button {
+  height: var(--header-control-size);
+}
+.budget-menu-button {
+  flex: 0 0 auto;
+  width: var(--header-control-size);
+  min-height: var(--header-control-size);
+  font-size: 1.5rem;
+  padding: 0;
+}
+.budget-dialog,
+.budget-dropdown {
+  background: var(--navy-900);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  padding: 20px;
+  max-height: 90dvh;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+.budget-dialog::backdrop {
+  background: rgb(0 0 0 / 65%);
+}
+.budget-dropdown::backdrop {
+  background: transparent;
+}
+.budget-dialog {
+  width: min(520px, 90vw);
+  border-radius: 16px;
+}
+.budget-dialog h2,
+.budget-dropdown h2 {
   font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(2rem, 4vw, 3rem);
-  letter-spacing: -0.04em;
+  margin-top: 0;
+}
+.budget-dialog form,
+.budget-list {
+  display: grid;
+  gap: 16px;
+}
+.budget-dialog label {
+  display: grid;
+  gap: 6px;
+}
+.budget-dialog input:not([type="radio"]) {
+  width: 100%;
+}
+.budget-dialog fieldset {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.budget-dialog .budget-template {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 8px;
+  cursor: pointer;
+}
+.budget-template input {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  accent-color: var(--gold);
+}
+.budget-template small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.budget-dialog-error {
+  color: #fca5a5;
+  margin: 0;
+}
+.budget-dropdown {
+  position: fixed;
+  inset: auto;
+  top: var(--budget-menu-top);
+  right: var(--budget-menu-right);
+  margin: 0;
+  width: min(360px, 90vw);
+  max-height: calc(100dvh - var(--budget-menu-top) - 8px);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+}
+.budget-dropdown > button {
+  width: 100%;
+  margin-bottom: 16px;
+}
+.budget-dropdown h2 {
+  min-height: 32px;
+  margin: 0 0 8px;
+  padding-right: 48px;
+}
+.budget-dropdown > .budget-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+.budget-list {
+  margin-bottom: 16px;
+}
+.budget-list-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.16);
+}
+.budget-list-entry.is-active {
+  border-color: var(--gold);
+}
+.budget-open.ghost {
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: transparent;
+  border: 0;
+}
+.budget-row-actions {
+  display: block;
+}
+.budget-row-actions > .entry-menu-toggle {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+}
+.budget-dialog button,
+.budget-dialog input:not([type="radio"]),
+.budget-dropdown button {
+  min-height: 48px;
 }
 .site-header {
   display: flex;
@@ -101,6 +246,12 @@ button,
   font-weight: 700;
   letter-spacing: -0.03em;
   text-decoration: none;
+}
+.budget-banner-name {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-transform: none;
 }
 .card {
   width: min(var(--content-width), 100%);
@@ -377,27 +528,50 @@ button.expense-add-button {
   border-radius: 6px;
   text-align: left;
 }
-header .actions {
-  max-width: 520px;
+.app-header .actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   align-items: center;
 }
-.save-help {
-  flex-basis: 100%;
+.backup-help {
+  position: relative;
+  flex: 0 0 auto;
+}
+.backup-help-button {
+  width: var(--header-control-size);
+  height: var(--header-control-size);
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1.2rem;
+}
+.backup-help-tooltip {
+  position: absolute;
+  z-index: 100;
+  top: 100%;
+  right: 0;
+  width: min(360px, calc(100vw - 24px));
+  max-height: 70vh;
+  overflow: auto;
   margin: 0;
-  color: var(--muted);
-  font-size: 0.8rem;
-  line-height: 1.35;
-  text-align: right;
-}
-.save-status {
-  opacity: 0;
-  color: var(--gold);
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--navy-900);
+  color: var(--ink);
   font-size: 0.85rem;
-  transition: opacity 0.2s;
+  line-height: 1.5;
+  text-align: left;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
 }
-.save-status.visible {
-  opacity: 1;
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .check {
   display: flex;
@@ -1232,10 +1406,6 @@ button.secondary {
   }
 }
 @media (max-width: 720px) {
-  header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
   .section-heading {
     flex-direction: column;
     align-items: flex-start;
@@ -1289,22 +1459,13 @@ textarea:focus-visible,
 .mobile-app {
   --page-gutter: 12px;
 }
-.mobile-app .app-header {
-  margin-top: 12px;
-  gap: 4px;
+.mobile-app .site-header {
+  min-height: 48px;
+  padding: 8px var(--page-gutter);
 }
-.mobile-app .app-header h1 {
-  font-size: 1.5rem;
-}
-.mobile-app .app-header .save-status {
-  margin-left: 8px;
-  font-size: 0.7rem;
-}
-.mobile-app .app-header .save-help {
-  grid-column: 1 / -1;
-}
-.mobile-app .save-help {
-  text-align: left;
+.mobile-app .budget-banner-name {
+  margin: 0;
+  font-size: 1.25rem;
 }
 .mobile-app .check {
   white-space: normal;
@@ -1330,10 +1491,6 @@ textarea:focus-visible,
   padding: 4px;
   font-size: 0.65rem;
   letter-spacing: 0;
-}
-.mobile-app .app-header {
-  flex-direction: column;
-  align-items: stretch;
 }
 .mobile-app .column-header {
   display: grid;
@@ -1940,21 +2097,10 @@ button.category-toggle {
 }
 
 .mobile-app .app-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
+  --header-control-size: 48px;
   gap: 8px;
 }
-.mobile-app .app-header > div:first-child {
-  min-width: 0;
-}
-.mobile-app .app-header .app-version {
-  display: block;
-  margin-top: 4px;
-}
 .mobile-app .app-header .actions {
-  display: flex;
-  flex-wrap: nowrap;
   gap: 6px;
 }
 .mobile-app .app-header .actions > button,
@@ -1963,7 +2109,6 @@ button.category-toggle {
   align-items: center;
   justify-content: center;
   width: 48px;
-  height: 48px;
   min-width: 48px;
   padding: 10px;
   border-radius: 8px;
@@ -1974,37 +2119,20 @@ button.category-toggle {
 .mobile-app .app-header .backup-icon {
   display: block;
 }
-.mobile-app .app-header .save-help {
-  grid-column: 1 / -1;
-}
 @media (max-width: 720px) {
   .app-header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: start;
+    --header-control-size: 48px;
     gap: 8px;
   }
-  .app-header > div:first-child {
-    min-width: 0;
-  }
-  .app-header h1 {
-    font-size: 1.5rem;
-  }
-  .app-header .app-version {
-    display: block;
-    margin-top: 4px;
-  }
   .app-header .actions {
-    display: flex;
-    flex-wrap: nowrap;
     gap: 6px;
   }
-  .app-header .actions > button, .app-header .actions > .button-like {
+  .app-header .actions > button,
+  .app-header .actions > .button-like {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 48px;
-    height: 48px;
     min-width: 48px;
     padding: 10px;
     border-radius: 8px;
@@ -2015,12 +2143,8 @@ button.category-toggle {
   .app-header .backup-icon {
     display: block;
   }
-  .app-header .save-status {
-    margin-left: 8px;
-    font-size: 0.7rem;
-  }
-  .app-header .save-help {
-    grid-column: 1 / -1;
+  .app-header .budget-banner-name {
+    font-size: 1.25rem;
   }
 }
 
@@ -2068,12 +2192,6 @@ button.category-toggle {
 .android-app .complete-summary-card,
 .android-app .faq-card {
   padding-top: 8px;
-}
-.android-app .app-header {
-  margin-bottom: 8px;
-}
-.android-app .app-header h1 {
-  margin-bottom: 0;
 }
 .android-app .section-heading {
   margin-bottom: 3px;

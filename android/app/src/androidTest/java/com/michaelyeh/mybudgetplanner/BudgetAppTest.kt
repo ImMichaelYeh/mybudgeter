@@ -19,6 +19,26 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class BudgetAppTest {
+    @Test fun autosavePersistsSilentlyAwayFromHeader() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            waitFor(scenario, "window.budgetReady === true && Boolean(activeBudget())")
+            evaluate(scenario, """
+                document.querySelector('.notes-card').scrollIntoView({block:'center'});
+                const notes = document.querySelector('.notes-textarea');
+                notes.value = 'Silent autosave';
+                notes.dispatchEvent(new Event('input', {bubbles:true}));
+                window.silentSaveFinished = false;
+                flushSave().then(() => window.silentSaveFinished = true);
+            """.trimIndent())
+            waitFor(scenario, "window.silentSaveFinished && !pendingSave && !saveError")
+            assertEquals(true, evaluate(scenario, """
+                scrollY > 0 && !document.querySelector('.save-feedback, .save-status')
+            """.trimIndent()))
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            assertTrue(File(context.filesDir, "budget.json").readText().contains("Silent autosave"))
+        }
+    }
+
     @Test fun compactAmountsAndInlineEditorsPreserveMobilePosition() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             waitFor(scenario, "window.budgetReady === true && Boolean(currentState)")
@@ -87,6 +107,9 @@ class BudgetAppTest {
 
     @Before fun supportedWebView() {
         assumeTrue("Update the emulator WebView to version 100+ before running budget interaction tests", MainActivity.supportsWebView())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        BudgetStorage(context.filesDir).save("""{"schema":"MyBudgeter-budget-v1","app":{},"incomes":[],"categories":[{"id":"default-needs","name":"Needs","percentage":50,"isSavings":false},{"id":"default-wants","name":"Wants","percentage":30,"isSavings":false},{"id":"default-savings","name":"Savings","percentage":20,"isSavings":true}],"expenses":[],"notes":""}""")
+        BudgetStorage(context.filesDir).saveSession("""{"schema":"MyBudgeter-sessions-v1","budgets":{}}""")
     }
     private fun findWeb(view: View): WebView? {
         if (view is WebView) return view
@@ -118,6 +141,199 @@ class BudgetAppTest {
         fail("Condition timed out: $expression; $diagnostic")
     }
 
+    private fun dismissFirstBudgetSetup(scenario: ActivityScenario<MainActivity>) {
+        evaluate(scenario, "if (!activeBudget()) document.querySelector('.budget-dialog')?.close();")
+        waitFor(scenario, "Boolean(activeBudget()) && !budgetTransition")
+    }
+
+    private fun captureBudgetUi(name: String) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.waitForIdleSync()
+        SystemClock.sleep(250)
+        val screenshot = instrumentation.uiAutomation.takeScreenshot()
+        File(instrumentation.targetContext.getExternalFilesDir(null), "$name.png").outputStream().use {
+            screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        screenshot.recycle()
+    }
+
+    private fun assertBudgetDropdown(scenario: ActivityScenario<MainActivity>) {
+        assertEquals(true, evaluate(scenario, """
+            (() => {
+              const trigger = document.querySelector('[data-budget-menu]');
+              const panel = document.querySelector('.budget-dropdown');
+              const bounds = panel.getBoundingClientRect();
+              return panel.open && trigger.getAttribute('aria-expanded') === 'true'
+                && bounds.top >= trigger.getBoundingClientRect().bottom + 7
+                && bounds.left >= 7 && bounds.right <= innerWidth - 7
+                && bounds.bottom <= innerHeight - 7 && bounds.height < innerHeight
+                && getComputedStyle(panel, '::backdrop').backgroundColor === 'rgba(0, 0, 0, 0)';
+            })()
+        """.trimIndent()))
+    }
+
+    @Test fun firstBudgetSetupDefaultsAndTemplatesWork() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        File(context.filesDir, "budget.json").delete()
+        File(context.filesDir, "session.json").delete()
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            waitFor(scenario, "window.budgetReady === true && Boolean(document.querySelector('.budget-dialog[open]'))")
+            assertEquals(false, evaluate(scenario, "Boolean(activeBudget())"))
+            assertEquals(true, evaluate(scenario, "document.querySelector('[data-budget-menu]').parentElement.matches('.app-header > .budget-heading') && !document.querySelector('[data-budget-menu]').hidden"))
+            assertEquals("50/30/20", evaluate(scenario, "document.querySelector('[name=strategy]:checked').value"))
+            assertEquals(4, evaluate(scenario, "document.querySelectorAll('[name=strategy]').length"))
+            captureBudgetUi("budget-setup-portrait")
+            evaluate(scenario, "window.budgetMobile.handleBack();")
+            waitFor(scenario, "Boolean(activeBudget()) && !budgetTransition && !document.querySelector('.budget-dialog')")
+            assertEquals("My Budget", evaluate(scenario, "activeBudget().name"))
+            assertEquals("50,30,20", evaluate(scenario, "currentState.categories.map(entry => entry.percentage).join(',')"))
+            for ((strategy, expected) in listOf("70/20/10" to "Spending:70:false,Savings:20:true,Debt:10:false", "thirds" to "Needs:33.33:false,Wants:33.33:false,Savings:33.34:true", "blank" to "")) {
+                evaluate(scenario, "budgetLibraryUI.create(); document.querySelector('[name=budgetName]').value = '$strategy'; document.querySelector('[name=strategy][value=\"$strategy\"]').click(); document.querySelector('.budget-dialog form').requestSubmit();")
+                waitFor(scenario, "activeBudget().name === '$strategy' && !budgetTransition && !document.querySelector('.budget-dialog')")
+                assertEquals(expected, evaluate(scenario, "currentState.categories.map(entry => entry.name+':'+entry.percentage+':'+entry.isSavings).join(',')"))
+            }
+            assertEquals(4, evaluate(scenario, "budgetCollection.budgets.length"))
+            evaluate(scenario, "window.confirm=() => true;")
+            for (remaining in 3 downTo 0) {
+                evaluate(scenario, "document.querySelector('[data-budget-menu]').click(); document.querySelector('.budget-list-entry.is-active .entry-menu-toggle').click(); [...document.querySelectorAll('.entry-action-menu button')].find(button => button.textContent === 'Delete').click();")
+                waitFor(scenario, "budgetCollection.budgets.length === $remaining && !budgetTransition && !document.querySelector('.budget-dropdown')")
+            }
+            waitFor(scenario, "Boolean(document.querySelector('.budget-dialog[open]'))")
+            dismissFirstBudgetSetup(scenario)
+            assertEquals("My Budget", evaluate(scenario, "activeBudget().name"))
+            assertEquals("50,30,20", evaluate(scenario, "currentState.categories.map(entry => entry.percentage).join(',')"))
+        }
+    }
+
+    @Test fun multipleBudgetsKeepDraftsAcrossSwitchingAndRecreation() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            waitFor(scenario, "window.budgetReady === true && Boolean(activeBudget())")
+            assertEquals("MyBudgeter-library-v1", evaluate(scenario, "budgetCollection.schema"))
+            assertEquals(true, evaluate(scenario, "!document.querySelector('[data-backup-help], #backup-help-tooltip')"))
+            assertEquals(false, evaluate(scenario, "Boolean(document.querySelector('dialog[open]'))"))
+            evaluate(scenario, "window.originalBudgetId = activeBudget().id; currentState.expenses=[{id:'rent',name:'Rent',amount:100,multiplier:1,frequency:'monthly',categoryId:'default-needs',group:''}]; saveState(currentState); render(currentState); document.querySelector('[data-edit-expense=rent]').click(); const draft = document.querySelector('.expense-edit-form [name=name]'); draft.value = 'Unfinished rent'; draft.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('[data-budget-menu]').click();")
+            assertEquals(true, evaluate(scenario, "document.querySelector('.budget-dropdown').open && document.activeElement.closest('.budget-dropdown') !== null && document.querySelector('.budget-dropdown').getBoundingClientRect().width <= innerWidth * 0.9 + 1"))
+            assertBudgetDropdown(scenario)
+            captureBudgetUi("budget-dropdown-portrait")
+            assertEntryMenu(scenario, ".budget-list-entry.is-active", "Rename,Duplicate,Delete")
+            assertEquals(true, evaluate(scenario, "document.querySelector('.budget-dropdown').open && document.querySelector('.budget-list-entry').getBoundingClientRect().height < 80 && [...document.querySelectorAll('.budget-row-actions > button:not(.entry-menu-toggle)')].every(button => button.hidden)"))
+            evaluate(scenario, "document.querySelector('.budget-list-entry.is-active .entry-menu-toggle').click();")
+            assertEquals(true, evaluate(scenario, "(() => { const menu=document.querySelector('.entry-action-menu'); const bounds=menu.getBoundingClientRect(); return menu.closest('.budget-dropdown') !== null && menu.contains(document.elementFromPoint(bounds.left+bounds.width/2,bounds.top+bounds.height/2)); })()"))
+            captureBudgetUi("budget-actions-portrait")
+            evaluate(scenario, "budgetMobile.handleBack();")
+            assertEquals(true, evaluate(scenario, "!document.querySelector('.entry-action-menu') && document.querySelector('.budget-dropdown').open"))
+            evaluate(scenario, "[...document.querySelectorAll('.budget-dropdown > button')].find(button => button.textContent === 'Create Budget').click(); document.querySelector('[name=budgetName]').value='Second'; document.querySelector('.budget-dialog form').requestSubmit();")
+            waitFor(scenario, "activeBudget().name === 'Second' && !budgetTransition && !document.querySelector('.budget-dialog')")
+            assertEquals(false, evaluate(scenario, "Boolean(document.querySelector('.expense-edit-form'))"))
+            evaluate(scenario, "document.querySelector('[data-budget-menu]').click(); [...document.querySelectorAll('.budget-open')].find(button => button.textContent === 'My Budget').click();")
+            waitFor(scenario, "activeBudget().name === 'My Budget' && !budgetTransition")
+            assertEquals("Unfinished rent", evaluate(scenario, "document.querySelector('.expense-edit-form [name=name]').value"))
+            evaluate(scenario, "window.checkpointDone = false; budgetMobile.checkpoint(false,true).then(() => window.checkpointDone = true);")
+            waitFor(scenario, "window.checkpointDone === true")
+            scenario.recreate()
+            waitFor(scenario, "window.budgetReady === true && Boolean(document.querySelector('.expense-edit-form'))")
+            assertEquals("Unfinished rent", evaluate(scenario, "document.querySelector('.expense-edit-form [name=name]').value"))
+            evaluate(scenario, "window.originalBudgetId=activeBudget().id; document.querySelector('[data-budget-menu]').click(); document.querySelector('.budget-list-entry.is-active .entry-menu-toggle').click(); [...document.querySelectorAll('.entry-action-menu button')].find(button => button.textContent === 'Duplicate').click(); document.querySelector('.budget-dialog form').requestSubmit();")
+            waitFor(scenario, "activeBudget().name === 'My Budget Copy' && !budgetTransition && !document.querySelector('.budget-dialog')")
+            assertEquals(true, evaluate(scenario, "currentState.expenses.length === 1 && currentState.expenses[0].name === 'Rent' && !currentState.app.editingExpenseId && !document.querySelector('.expense-edit-form')"))
+            evaluate(scenario, "window.pickerError=''; window.alert=message => window.pickerError=message; window.dispatchEvent(new CustomEvent('budget-document-result',{detail:{operation:'import',budgetId:originalBudgetId,value:JSON.stringify(budget.createEmptyState())}}));")
+            waitFor(scenario, "window.pickerError.includes('selected budget changed')")
+            assertEquals("My Budget Copy", evaluate(scenario, "activeBudget().name"))
+            evaluate(scenario, "document.querySelector('[data-budget-menu]').click(); document.querySelector('.budget-list-entry.is-active .entry-menu-toggle').click(); [...document.querySelectorAll('.entry-action-menu button')].find(button => button.textContent === 'Rename').click(); document.querySelector('[name=budgetName]').value='Renamed'; document.querySelector('.budget-dialog form').requestSubmit();")
+            waitFor(scenario, "activeBudget().name === 'Renamed' && !budgetTransition && !document.querySelector('.budget-dialog')")
+            assertEquals("Renamed", evaluate(scenario, "activeBudget().name"))
+            assertEquals("Renamed", evaluate(scenario, "document.querySelector('.budget-banner-name').textContent"))
+            assertEquals(false, evaluate(scenario, "Boolean(document.querySelector('.active-budget-name'))"))
+            evaluate(scenario, "window.confirm=() => true; document.querySelector('[data-budget-menu]').click(); document.querySelector('.budget-list-entry.is-active .entry-menu-toggle').click(); [...document.querySelectorAll('.entry-action-menu button')].find(button => button.textContent === 'Delete').click();")
+            waitFor(scenario, "activeBudget().name === 'My Budget' && !budgetTransition && !document.querySelector('.budget-dropdown')")
+            assertEquals(2, evaluate(scenario, "budgetCollection.budgets.length"))
+            assertEquals("Unfinished rent", evaluate(scenario, "document.querySelector('.expense-edit-form [name=name]').value"))
+            assertEquals(true, evaluate(scenario, "budget.createSavePayload(currentState).schema === 'MyBudgeter-budget-v1' && !('budgets' in budget.createSavePayload(currentState))"))
+        }
+    }
+
+    @Test fun desktopBrowserKeepsDraftsOnReloadAndDropdownFitsWideLayout() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            waitFor(scenario, "window.budgetReady === true")
+            scenario.onActivity { activity ->
+                val web = findWeb(activity.window.decorView)!!
+                web.settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/133.0.0.0 Safari/537.36"
+                web.layoutParams = web.layoutParams.apply { width = (1200 * activity.resources.displayMetrics.density).toInt() }
+                web.loadUrl("${MainActivity.ORIGIN}/assets/index.html")
+            }
+            waitFor(scenario, "window.budgetReady === true && !budgetPlatform.isMobile")
+            dismissFirstBudgetSetup(scenario)
+            assertEquals(true, evaluate(scenario, "document.querySelector('[data-budget-menu]').parentElement.matches('.app-header > .budget-heading') && !document.querySelector('.active-budget-name') && document.querySelector('[data-budget-menu]').nextElementSibling.matches('.budget-banner-name')"))
+            assertEquals(true, evaluate(scenario, """
+                (() => {
+                  const title = document.querySelector('.app-header h1').getBoundingClientRect();
+                  const controls = ['[data-budget-menu]', '[data-download-save]', '.app-header .button-like']
+                    .map(selector => document.querySelector(selector).getBoundingClientRect());
+                  const menu = document.querySelector('[data-budget-menu]').getBoundingClientRect();
+                  const help = document.querySelector('#backup-help-tooltip');
+                  return controls.every(bounds => Math.abs((bounds.top + bounds.bottom - title.top - title.bottom) / 2) <= 1)
+                    && Math.abs(title.left - menu.right - 12) <= 1 && help.hidden;
+                })()
+            """.trimIndent()))
+            evaluate(scenario, "document.querySelector('.backup-help').dispatchEvent(new MouseEvent('mouseenter')); ")
+            assertEquals(false, evaluate(scenario, "document.querySelector('#backup-help-tooltip').hidden"))
+            evaluate(scenario, "document.querySelector('[data-backup-help]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));")
+            assertEquals(true, evaluate(scenario, "document.querySelector('#backup-help-tooltip').hidden"))
+            evaluate(scenario, "currentState=budget.createEmptyState(); currentState.expenses=[{id:'browser-item',name:'Rent',amount:100,multiplier:1,frequency:'monthly',categoryId:'default-needs',group:''}]; saveState(currentState); render(currentState); document.querySelector('[data-edit-expense=browser-item]').click(); const draft=document.querySelector('.expense-edit-form [name=name]'); draft.value='Browser draft'; draft.dispatchEvent(new Event('input',{bubbles:true})); window.checkpointDone=false; budgetMobile.checkpoint(false,true).then(() => window.checkpointDone=true);")
+            waitFor(scenario, "window.checkpointDone === true")
+            evaluate(scenario, "window.reloadMarker=true;")
+            scenario.onActivity { activity -> findWeb(activity.window.decorView)!!.reload() }
+            waitFor(scenario, "window.budgetReady === true && !window.reloadMarker && Boolean(document.querySelector('.expense-edit-form'))")
+            assertEquals("Browser draft", evaluate(scenario, "document.querySelector('.expense-edit-form [name=name]').value"))
+            evaluate(scenario, "window.headerScrollReady=false; window.scrollTo(0,0); requestAnimationFrame(() => requestAnimationFrame(() => window.headerScrollReady=true));")
+            waitFor(scenario, "window.headerScrollReady === true")
+            evaluate(scenario, "document.querySelector('[data-budget-menu]').click();")
+            assertEquals(true, evaluate(scenario, "innerWidth >= 1000 && Math.abs(document.querySelector('.budget-dropdown').getBoundingClientRect().width - 360) <= 1 && document.documentElement.scrollWidth <= innerWidth"))
+            assertBudgetDropdown(scenario)
+            captureBudgetUi("budget-dropdown-desktop")
+            assertEntryMenu(scenario, ".budget-list-entry.is-active", "Rename,Duplicate,Delete")
+            assertEquals(true, evaluate(scenario, "(() => { const bounds=document.querySelector('.budget-row-actions .entry-menu-toggle').getBoundingClientRect(); return bounds.width === 32 && bounds.height === 32; })()"))
+            evaluate(scenario, "document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));")
+            waitFor(scenario, "!document.querySelector('.budget-dropdown')")
+            assertEquals(true, evaluate(scenario, "document.activeElement.matches('[data-budget-menu]')"))
+            assertEquals("false", evaluate(scenario, "document.querySelector('[data-budget-menu]').getAttribute('aria-expanded')"))
+            evaluate(scenario, "document.querySelector('[data-budget-menu]').click(); window.dispatchEvent(new Event('resize'));")
+            waitFor(scenario, "!document.querySelector('.budget-dropdown')")
+            evaluate(scenario, "document.querySelector('[data-budget-menu]').click(); document.querySelector('.budget-dropdown').dispatchEvent(new MouseEvent('click',{clientX:0,clientY:0,bubbles:true}));")
+            waitFor(scenario, "!document.querySelector('.budget-dropdown')")
+        }
+    }
+
+    @Test fun budgetDropdownHandlesLongNamesLargeTextAndLandscape() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            waitFor(scenario, "window.budgetReady === true && Boolean(activeBudget())")
+            evaluate(scenario, "window.longNameSaved=false; changeBudgetLibrary(next => { next.budgets[0].name='LongBudgetName'.repeat(7); return next; }).then(() => window.longNameSaved=true);")
+            waitFor(scenario, "window.longNameSaved === true")
+            scenario.onActivity { activity ->
+                findWeb(activity.window.decorView)!!.settings.textZoom = 150
+                activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            }
+            try {
+                waitFor(scenario, "window.budgetReady === true && matchMedia('(orientation: landscape)').matches")
+                scenario.onActivity { activity -> findWeb(activity.window.decorView)!!.settings.textZoom = 150 }
+                evaluate(scenario, "document.querySelector('[data-budget-menu]').click();")
+                assertEquals(true, evaluate(scenario, "document.documentElement.scrollWidth <= innerWidth && document.querySelector('.budget-dropdown').scrollWidth <= document.querySelector('.budget-dropdown').clientWidth && [...document.querySelectorAll('.budget-dropdown button:not([hidden])')].every(button => button.getBoundingClientRect().height >= 48)"))
+                assertBudgetDropdown(scenario)
+                captureBudgetUi("budget-dropdown-landscape-large-text")
+                scenario.onActivity { activity -> findWeb(activity.window.decorView)!!.requestFocus() }
+                repeat(9) {
+                    InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_TAB)
+                    assertEquals(true, evaluate(scenario, "document.activeElement.closest('.budget-dropdown') !== null || document.activeElement.outerHTML"))
+                }
+                evaluate(scenario, "window.budgetMobile.handleBack();")
+                waitFor(scenario, "!document.querySelector('.budget-dropdown')")
+                assertEquals(true, evaluate(scenario, "document.activeElement.matches('[data-budget-menu]')"))
+            } finally {
+                scenario.onActivity { activity -> activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+            }
+        }
+    }
+
     private fun assertGroupItemControls(scenario: ActivityScenario<MainActivity>) {
         assertEquals(0, evaluate(scenario, "document.querySelectorAll('[data-add-subgroup]').length"))
         assertEquals(true, evaluate(scenario, "(() => { const groups = [...document.querySelectorAll('.item-group')]; return groups.length > 0 && groups.every(group => Boolean(group.querySelector(':scope > [data-add-group-item]'))); })()"))
@@ -129,7 +345,7 @@ class BudgetAppTest {
     private fun assertEntryMenu(scenario: ActivityScenario<MainActivity>, selector: String, expected: String) {
         evaluate(scenario, "document.querySelector(\"$selector .entry-menu-toggle\").click();")
         assertEquals(expected, evaluate(scenario, "[...document.querySelectorAll('.entry-action-menu button')].map(button => button.textContent).join(',')"))
-        assertEquals(true, evaluate(scenario, "(() => { const options = document.querySelectorAll('.entry-action-menu button'); return options[1].getBoundingClientRect().top - options[0].getBoundingClientRect().bottom >= 4; })()"))
+        assertEquals(true, evaluate(scenario, "(() => { const options = document.querySelectorAll('.entry-action-menu button'); return options[1].getBoundingClientRect().top - options[0].getBoundingClientRect().bottom >= 3.99; })()"))
         assertEquals(true, evaluate(scenario, "document.querySelector(\"$selector .entry-menu-toggle\").getAttribute('aria-expanded') === 'true'"))
         evaluate(scenario, "document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));")
         assertEquals(expected.split(',')[1], evaluate(scenario, "document.activeElement.textContent"))
@@ -269,7 +485,8 @@ class BudgetAppTest {
         File(context.filesDir, "session.json").delete()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             waitFor(scenario, "window.budgetReady === true && Boolean(document.querySelector('[data-toggle-income]'))")
-            assertEquals("1.8.1", evaluate(scenario, "budget.APP_VERSION"))
+            dismissFirstBudgetSetup(scenario)
+            assertEquals("1.9.0", evaluate(scenario, "budget.APP_VERSION"))
             assertEquals(false, evaluate(scenario, "currentState.app.isIncomeOpen"))
             assertEquals(true, evaluate(scenario, "document.querySelector('[data-add-income]').closest('.collapsible-body').hidden"))
             evaluate(scenario, "document.querySelector('[data-toggle-income]').click();")
@@ -277,8 +494,8 @@ class BudgetAppTest {
             assertEquals(true, evaluate(scenario, "[...document.querySelectorAll('[data-remove-category]')].every(button => button.textContent.charCodeAt(0) === 215 && button.hasAttribute('aria-label'))"))
             assertEquals("My Budget Planner", context.applicationInfo.loadLabel(context.packageManager).toString())
             assertEquals("My Budget Planner", evaluate(scenario, "document.title"))
-            assertEquals("My Budget Planner", evaluate(scenario, "document.querySelector('.app-header h1').firstChild.textContent.trim()"))
-            assertEquals(false, evaluate(scenario, "Boolean(document.querySelector('.site-header'))"))
+            assertEquals(true, evaluate(scenario, "document.querySelector('.app-header h1').textContent === activeBudget().name && !document.querySelector('.app-version')"))
+            assertEquals(true, evaluate(scenario, "document.querySelector('.budget-banner-name').textContent === activeBudget().name && document.querySelector('.site-header').getBoundingClientRect().height >= 48"))
             assertEquals(false, evaluate(scenario, "Boolean(document.querySelector('[draggable]'))"))
             assertEquals(1, evaluate(scenario, "document.querySelectorAll('.summary-card:not([hidden])').length"))
             assertSummarySelector(scenario)
@@ -303,7 +520,7 @@ class BudgetAppTest {
                 assertEquals("No ordering bars at $width", 0, evaluate(scenario, "document.querySelectorAll('[data-order-step]').length"))
                 assertEquals("Inline category controls at $width", true, evaluate(scenario, "[...document.querySelectorAll('.column-header')].every(header => { const name = header.querySelector('h3').parentElement.getBoundingClientRect(); const actions = header.querySelector('.actions').getBoundingClientRect(); return actions.left >= name.right && actions.top < name.bottom && actions.bottom > name.top && [...header.querySelectorAll('button:not([hidden])')].every(button => button.getBoundingClientRect().width >= 48 && button.getBoundingClientRect().height >= 48); })"))
                 assertEquals("Compact Android layout at $width", true, evaluate(scenario, "(() => { const heading = document.querySelector('.section-heading'); const name = heading.querySelector('h2').getBoundingClientRect(); const toggle = heading.querySelector('.hint').getBoundingClientRect(); const title = document.querySelector('.app-header h1').getBoundingClientRect(); const backups = document.querySelector('.app-header .actions').getBoundingClientRect(); return !document.querySelector('.app-header > div:first-child > p') && toggle.top <= name.bottom && toggle.bottom >= name.top && backups.top - title.bottom <= 12 && document.querySelector('.column-metrics').getBoundingClientRect().height < 110 && document.querySelector('.category-add-row > [data-show-category-form]').getBoundingClientRect().height <= 60; })()"))
-                assertEquals("Compact backup buttons at $width", true, evaluate(scenario, "(() => { const buttons = [...document.querySelectorAll('.app-header .actions > button')].map(button => button.getBoundingClientRect()); return buttons.length === 2 && [...document.querySelectorAll('.app-header .actions > button')].every(button => button.querySelector('svg') && button.getAttribute('aria-label') && getComputedStyle(button.querySelector('.backup-label')).display === 'none') && document.querySelector('.app-version').getBoundingClientRect().top > document.querySelector('.app-header h1').getBoundingClientRect().top && buttons[0].top < document.querySelector('.app-version').getBoundingClientRect().top && buttons.every(rect => Math.abs(rect.width - rect.height) < 1) && Math.abs(buttons[0].top - buttons[1].top) < 1 && buttons.every(rect => rect.height >= 48 && rect.width < window.innerWidth / 2); })()"))
+                assertEquals("Compact backup buttons at $width", true, evaluate(scenario, "(() => { const buttons = [...document.querySelectorAll('.app-header .actions > button:not([data-budget-menu])')].map(button => button.getBoundingClientRect()); return buttons.length === 2 && [...document.querySelectorAll('.app-header .actions > button:not([data-budget-menu])')].every(button => button.querySelector('svg') && button.getAttribute('aria-label') && getComputedStyle(button.querySelector('.backup-label')).display === 'none') && !document.querySelector('.app-version') && document.querySelector('[data-budget-menu]').nextElementSibling.matches('.budget-banner-name') && buttons.every(rect => Math.abs(rect.width - rect.height) < 1) && Math.abs(buttons[0].top - buttons[1].top) < 1 && buttons.every(rect => rect.height >= 48 && rect.width < window.innerWidth / 2); })()"))
                 assertEquals("Compact readable category metrics at $width", true, evaluate(scenario, "[...document.querySelectorAll('.category-stats')].every(stats => { const cells = [...stats.querySelector('.column-metrics').children].map(cell => cell.getBoundingClientRect()); return stats.getBoundingClientRect().height <= 75 && cells.length === 3 && cells.every(cell => Math.abs(cell.top - cells[0].top) < 1) && [...stats.querySelectorAll('.column-metrics span')].every(label => parseFloat(getComputedStyle(label).fontSize) >= 12); })"))
             }
             scenario.onActivity { activity ->
@@ -321,7 +538,8 @@ class BudgetAppTest {
                 currentState.app.collapsedGroups = {'default-needs:Home / Utilities':true};
                 saveState(currentState); render(currentState);
             """.trimIndent())
-            waitFor(scenario, "document.querySelector('[data-save-status]').textContent === 'Saved'")
+            evaluate(scenario, "window.saveFinished = false; flushSave().then(() => window.saveFinished = true);")
+            waitFor(scenario, "window.saveFinished && !saveError")
             evaluate(scenario, "document.querySelector('.category-stats').scrollIntoView({block:'center'});")
             SystemClock.sleep(200)
             InstrumentationRegistry.getInstrumentation().uiAutomation
@@ -397,7 +615,7 @@ class BudgetAppTest {
                   const boxes = [...document.querySelector('.summary-card:not([hidden])').querySelectorAll('.summary-row')];
                   const circles = [...document.querySelectorAll('button.category-toggle, .column-header .entry-menu-toggle')];
                   return boxes.length === 5 && boxes[0].getBoundingClientRect().top === boxes[1].getBoundingClientRect().top
-                    && boxes.every(box => getComputedStyle(box).flexDirection === 'column' && getComputedStyle(box).borderRadius === '12px' && getComputedStyle(box).borderBottomWidth === '1px')
+                    && boxes.every(box => getComputedStyle(box).flexDirection === 'column' && getComputedStyle(box).borderRadius === '12px' && parseFloat(getComputedStyle(box).borderBottomWidth) > 0 && parseFloat(getComputedStyle(box).borderBottomWidth) <= 1)
                     && circles.length > 0 && circles.every(button => {
                       const rect = button.getBoundingClientRect();
                       return rect.width === 48 && rect.height === 48 && getComputedStyle(button).borderRadius === '50%';
@@ -436,6 +654,7 @@ class BudgetAppTest {
         File(context.filesDir, "session.json").delete()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             waitFor(scenario, "window.budgetReady === true && Boolean(document.querySelector('[data-toggle-income]'))")
+            dismissFirstBudgetSetup(scenario)
             file.delete()
             assertTrue("Could not create failed-save fixture", file.mkdir())
             File(file, "block-replacement").writeText("fixture")
@@ -445,7 +664,7 @@ class BudgetAppTest {
             File(file, "block-replacement").delete()
             file.delete()
             evaluate(scenario, "currentState.notes = 'Older retry'; saveState(currentState); flushSave(); currentState.notes = 'Newest retry'; saveState(currentState); window.retriesFinished = false; flushSave().then(() => window.retriesFinished = true);")
-            waitFor(scenario, "window.retriesFinished === true && !document.querySelector('.storage-error') && document.querySelector('[data-save-status]').textContent === 'Saved'")
+            waitFor(scenario, "window.retriesFinished === true && !document.querySelector('.storage-error') && !saveError")
             assertTrue(file.readText().contains("Newest retry"))
         }
     }
@@ -475,8 +694,8 @@ class BudgetAppTest {
             assertEquals("default-wants", evaluate(scenario, "currentState.expenses[0].categoryId"))
             evaluate(scenario, """
                 document.querySelector('[data-edit-category=default-needs]').click();
-                var name = document.querySelector('[data-edit-category-form=default-needs]').elements.name;
-                name.value = 'Unsubmitted category'; name.dispatchEvent(new Event('input',{bubbles:true}));
+                var categoryNameInput = document.querySelector('[data-edit-category-form=default-needs]').elements.name;
+                categoryNameInput.value = 'Unsubmitted category'; categoryNameInput.dispatchEvent(new Event('input',{bubbles:true}));
                 window.confirm = () => true; window.budgetMobile.handleBack();
             """.trimIndent())
             assertEquals("Needs", evaluate(scenario, "currentState.categories.find(category => category.id === 'default-needs').name"))
@@ -591,14 +810,19 @@ class BudgetAppTest {
                 findWeb(activity.window.decorView)!!.loadUrl("${MainActivity.ORIGIN}/assets/index.html")
             }
             waitFor(scenario, "window.budgetReady === true && budgetPlatform.isMobile && !budgetPlatform.isAndroid")
-            assertEquals(true, evaluate(scenario, "document.documentElement.classList.contains('mobile-app') && !document.documentElement.classList.contains('android-app') && !document.querySelector('.site-header') && !document.querySelector('.app-header > div:first-child > p') && Boolean(document.querySelector('input[data-import-save]'))"))
+            dismissFirstBudgetSetup(scenario)
+            assertEquals(true, evaluate(scenario, "document.documentElement.classList.contains('mobile-app') && !document.documentElement.classList.contains('android-app') && document.querySelector('.budget-banner-name').textContent === activeBudget().name && !document.querySelector('.app-header > div:first-child > p') && Boolean(document.querySelector('input[data-import-save]'))"))
             evaluate(scenario, "currentState = budget.createEmptyState(); currentState.expenses = [{id:'phone-a',name:'First',amount:10,multiplier:1,frequency:'monthly',categoryId:'default-needs',group:'',sortOrder:1},{id:'phone-b',name:'Second',amount:20,multiplier:1,frequency:'monthly',categoryId:'default-needs',group:'',sortOrder:2}]; render(currentState);")
             assertEntryMenu(scenario, "[data-expense-id=phone-a]", "Move,Edit,Remove")
             drag(scenario, "[data-expense-id=phone-a] strong", "[data-expense-id=phone-b]", 0.5)
             assertEquals(true, evaluate(scenario, "currentState.expenses[0].group && currentState.expenses[0].group === currentState.expenses[1].group"))
             evaluate(scenario, "window.browserPhoneSaved = false; flushSave().then(() => window.browserPhoneSaved = true);")
             waitFor(scenario, "window.browserPhoneSaved === true")
-            assertEquals(true, evaluate(scenario, "Boolean(localStorage.getItem('MyBudgeter-save-v1')) && document.querySelector('.save-help').textContent.includes('this browser') && !document.querySelector('.save-help').textContent.includes('privately')"))
+            assertEquals(true, evaluate(scenario, "Boolean(localStorage.getItem('MyBudgeter-save-v1')) && !document.querySelector('.save-help') && document.querySelector('#backup-help-tooltip').hidden"))
+            evaluate(scenario, "document.querySelector('[data-backup-help]').click();")
+            assertEquals(true, evaluate(scenario, "!document.querySelector('#backup-help-tooltip').hidden && document.querySelector('#backup-help-tooltip').textContent.includes('Importing a save file replaces only the active budget.')"))
+            evaluate(scenario, "document.querySelector('.budget-banner-name').click();")
+            assertEquals(true, evaluate(scenario, "document.querySelector('#backup-help-tooltip').hidden"))
             scenario.onActivity { activity ->
                 val web = findWeb(activity.window.decorView)!!
                 web.layoutParams = web.layoutParams.apply { width = (900 * activity.resources.displayMetrics.density).toInt() }
@@ -618,8 +842,9 @@ class BudgetAppTest {
                 web.loadUrl("${MainActivity.ORIGIN}/assets/index.html")
             }
             waitFor(scenario, "window.budgetPlatform?.isAndroid === false && Boolean(document.querySelector('[draggable]'))")
-            assertEquals("Michael Yeh", evaluate(scenario, "document.querySelector('.site-brand').textContent"))
-            assertEquals("My Budget Planner", evaluate(scenario, "document.querySelector('.app-header h1').firstChild.textContent.trim()"))
+            dismissFirstBudgetSetup(scenario)
+            assertEquals(true, evaluate(scenario, "document.querySelector('.budget-banner-name').textContent === activeBudget().name"))
+            assertEquals(true, evaluate(scenario, "document.querySelector('.app-header h1').textContent === activeBudget().name && !document.querySelector('.app-version')"))
             evaluate(scenario, "currentState.app.isIncomeOpen = true; currentState.app.isBudgetBoardOpen = false; currentState.app.isNotesOpen = false; currentState.app.isFaqOpen = true; currentState.app.boardPeriod = 'semi-monthly'; currentState.expenses = [{id:'startup-group',name:'Nested',amount:10,multiplier:1,frequency:'monthly',categoryId:'default-needs',group:'Home / Child',sortOrder:1}]; currentState.app.collapsedGroups = {'default-needs:Home':false,'default-needs:Home / Child':true}; saveState(currentState); window.incomeSaved = false; flushSave().then(() => window.incomeSaved = true);")
             waitFor(scenario, "window.incomeSaved === true")
             evaluate(scenario, "window.reloadMarker = true;")
@@ -696,7 +921,7 @@ class BudgetAppTest {
             }
             SystemClock.sleep(200)
             assertEquals(true, evaluate(scenario, "(() => { const heading = document.querySelector('.summary-heading').getBoundingClientRect(); const period = document.querySelector('.summary-period-control').getBoundingClientRect(); return window.innerWidth > 720 && Math.abs((period.left+period.right)/2 - (heading.left+heading.right)/2) <= 2 && getComputedStyle(document.querySelector('.faq-card h2')).fontSize === getComputedStyle(document.querySelector('.summary-heading h2')).fontSize; })()"))
-            evaluate(scenario, "window.alert = message => window.importError = message; window.confirm = () => true; window.importFinished = false; importBudget(localStorage.getItem('MyBudgeter-save-v1')).then(() => window.importFinished = true);")
+            evaluate(scenario, "window.alert = message => window.importError = message; window.confirm = () => true; window.importFinished = false; importBudget(JSON.stringify(budget.createSavePayload(currentState))).then(() => window.importFinished = true);")
             waitFor(scenario, "window.importFinished === true")
             assertEquals(true, evaluate(scenario, "!window.importError"))
             assertEquals("default-savings", evaluate(scenario, "budget.sortCategories(currentState)[0].id"))

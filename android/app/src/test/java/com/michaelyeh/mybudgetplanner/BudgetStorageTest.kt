@@ -42,4 +42,28 @@ class BudgetStorageTest {
         atomic.failWrite(stream)
         assertEquals("original", storage.load())
     }
+
+    @Test fun libraryWritesRetainIndependentBudgetsAndRecoverySessions() {
+        val storage = BudgetStorage(temporary.root)
+        val data = """{"schema":"MyBudgeter-budget-v1","incomes":[],"categories":[],"expenses":[]}"""
+        val library = """{"schema":"MyBudgeter-library-v1","activeBudgetId":"second","budgets":[{"id":"first","name":"First","data":$data},{"id":"second","name":"Second","data":$data}]}"""
+        val recovery = """{"schema":"MyBudgeter-sessions-v1","budgets":{"first":{"budgetId":"first","forms":[]},"second":{"budgetId":"second","forms":[]}}}"""
+        storage.save(library)
+        storage.saveSession(recovery)
+        val reopened = BudgetStorage(temporary.root)
+        assertEquals(library, reopened.load())
+        assertEquals(recovery, reopened.loadSession())
+        val activity = MainActivity()
+        val validate = MainActivity::class.java.getDeclaredMethod("validateLibrary", String::class.java).apply { isAccessible = true }
+        validate.invoke(activity, library)
+        validate.invoke(activity, data)
+        for (invalid in listOf(
+            library.replace("\"activeBudgetId\":\"second\"", "\"activeBudgetId\":\"missing\""),
+            library.replace("\"id\":\"second\"", "\"id\":\"first\""),
+            library.replace("\"name\":\"Second\"", "\"name\":\"FIRST\""),
+            library.replace("\"name\":\"Second\"", "\"name\":\" \""),
+        )) assertThrows(java.lang.reflect.InvocationTargetException::class.java) { validate.invoke(activity, invalid) }
+        val exportValidator = MainActivity::class.java.getDeclaredMethod("validateBudget", String::class.java).apply { isAccessible = true }
+        assertThrows(java.lang.reflect.InvocationTargetException::class.java) { exportValidator.invoke(activity, library) }
+    }
 }

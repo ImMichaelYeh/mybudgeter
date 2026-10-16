@@ -3,26 +3,46 @@
   const mobile = window.budgetPlatform.isMobile;
   let sessionTimer;
   let restoring = false;
-  let initialized = !android;
   let checkpointValue = "";
+  let sessions = { schema: "MyBudgeter-sessions-v1", budgets: {} };
+  let sessionsLoaded = false;
+  let sessionLoad;
+  let sessionQueue = Promise.resolve();
+  let checkpointWrite = Promise.resolve();
+  let closeBackupHelp;
 
-  function compactHeader() {
-    const header = document.querySelector(".app-header");
-    if (!header) return;
-    const actions = header.querySelector(".actions");
-    const help = header.querySelector(".save-help");
-    const status = header.querySelector("[data-save-status]");
-    const compact = mobile || window.innerWidth <= 720;
-    if (help) (compact ? header : actions).append(help);
-    if (status) {
-      if (compact) header.querySelector(".app-version").append(status);
-      else actions.prepend(status);
-    }
+  function setupBackupHelp() {
+    const button = document.querySelector("[data-backup-help]");
+    const tooltip = document.querySelector("#backup-help-tooltip");
+    closeBackupHelp = null;
+    if (!button || !tooltip) return;
+    let pinned = false;
+    const show = (open) => {
+      tooltip.hidden = !open;
+      button.setAttribute("aria-expanded", String(open));
+    };
+    closeBackupHelp = () => {
+      const wasOpen = !tooltip.hidden;
+      pinned = false;
+      show(false);
+      return wasOpen;
+    };
+    button.parentElement.onmouseenter = () => show(true);
+    button.parentElement.onmouseleave = () => {
+      if (!pinned && document.activeElement !== button) show(false);
+    };
+    button.onfocus = () => {
+      if (button.matches(":focus-visible")) show(true);
+    };
+    button.onblur = closeBackupHelp;
+    button.onclick = () => {
+      pinned = !pinned;
+      show(pinned);
+    };
   }
-  window.addEventListener("resize", compactHeader);
 
   function enhance() {
-    compactHeader();
+    setupBackupHelp();
     document.querySelectorAll('input[type="number"]').forEach((input) => {
       input.inputMode = "decimal";
     });
@@ -48,7 +68,6 @@
       addActionMenus();
       return;
     }
-    document.querySelector(".site-header")?.remove();
     document.querySelectorAll(".item-group-header").forEach((header) => {
       const name = header.querySelector(":scope > h4");
       const total = header.querySelector(":scope > .group-total");
@@ -69,13 +88,6 @@
       stats.append(metrics, progress, label);
     });
     document.title = "My Budget Planner";
-    const title = document.querySelector(".app-header h1");
-    document.querySelector(".app-header > div:first-child > p")?.remove();
-    if (title) {
-      title.firstChild.textContent = "My Budget Planner ";
-      const status = document.querySelector("[data-save-status]");
-      if (status) title.querySelector(".app-version").append(status);
-    }
     document
       .querySelectorAll(
         ".column-header h3, .item-group-header h4, .expense-item strong",
@@ -128,12 +140,15 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "secondary";
-      button.innerHTML = file.closest("label").querySelector(".backup-icon").outerHTML + '<span class="backup-label">Import Save File</span>';
+      button.innerHTML =
+        file.closest("label").querySelector(".backup-icon").outerHTML +
+        '<span class="backup-label">Import Save File</span>';
       button.setAttribute("aria-label", "Import Save File");
       button.title = "Import Save File";
       button.onclick = async () => {
         try {
-          await importBudget(await platform.importFile());
+          const budgetId = budgetCollection.activeBudgetId;
+          await importBudget(await platform.importFile(budgetId), budgetId);
         } catch (error) {
           window.alert(error.message);
         }
@@ -146,24 +161,21 @@
         "Having issues? Contact my.development.life@gmail.com";
     const exportButton = document.querySelector("[data-download-save]");
     if (exportButton) {
-      exportButton.querySelector(".backup-label").textContent = "Export Save File";
+      exportButton.querySelector(".backup-label").textContent =
+        "Export Save File";
       exportButton.setAttribute("aria-label", "Export Save File");
       exportButton.title = "Export Save File";
     }
     document.querySelectorAll(".link-button.hint").forEach((button) => {
       button.textContent = button.textContent.replace(/click/gi, "Tap");
     });
-    const help = document.querySelector(".save-help");
-    if (help)
-      help.textContent =
-        "Saved in this browser. Export a backup; importing replaces your budget. Browser and app budgets do not sync.";
     document.querySelectorAll(".faq-question").forEach((question) => {
       const title = question.querySelector("summary")?.textContent;
       if (android && title?.includes("saving, downloading")) {
         question.querySelector("summary").textContent =
           "How does saving, exporting, And importing Work?";
         question.querySelectorAll("p")[0].textContent =
-          "Your budget saves automatically in this app's private storage on this device. Export Save File creates a JSON backup at a location you choose. Import Save File replaces your current budget with a compatible MyBudgeter backup after confirmation. Browser and app budgets do not sync; transfer them using export and import.";
+          "Your budgets save automatically in this app's private storage on this device. Use the menu beside the budget name to create, switch, rename, duplicate, or delete budgets. Each budget keeps its own preferences and unfinished forms across relaunches. Export Save File backs up only the active budget, without its local name or unfinished forms. Import Save File replaces only the active budget after confirmation, keeps its local name, and leaves other budgets unchanged. Create a budget first to import separately. Browser and app budgets do not sync; transfer one budget at a time using export and import.";
       }
       if (android && title?.includes("stored and who")) {
         const paragraphs = question.querySelectorAll("p");
@@ -199,65 +211,66 @@
       .querySelectorAll(
         ".income-item > .actions, .expense-item > .actions, .column-header > .actions, .item-group-header > .actions",
       )
-      .forEach((actions) => {
-        const controls = [...actions.children].filter((button) =>
-          button.matches("button"),
-        );
-        if (!controls.length) return;
-        controls.forEach((button) => {
-          button.hidden = true;
-        });
-        const toggle = document.createElement("button");
-        toggle.type = "button";
-        toggle.className = "ghost small-button entry-menu-toggle";
-        toggle.innerHTML =
-          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>';
-        const name =
-          actions.parentElement.querySelector("h3, h4, strong")?.textContent ||
-          "Entry";
-        toggle.setAttribute("aria-label", `Actions for ${name}`);
-        toggle.setAttribute("aria-haspopup", "menu");
-        toggle.setAttribute("aria-expanded", "false");
-        toggle.onclick = () => {
-          const wasOpen = menuToggle === toggle;
-          closeActionMenu();
-          if (wasOpen) return;
-          menuToggle = toggle;
-          toggle.setAttribute("aria-expanded", "true");
-          const menu = document.createElement("div");
-          menu.className = "entry-action-menu";
-          menu.setAttribute("role", "menu");
-          menu.setAttribute("aria-label", `Actions for ${name}`);
-          controls.forEach((control) => {
-            const option = document.createElement("button");
-            option.type = "button";
-            option.setAttribute("role", "menuitem");
-            option.disabled = control.disabled;
-            option.textContent = control.matches("[data-move-entry]")
-              ? "Move"
-              : control.textContent.trim() === "Edit"
-                ? "Edit"
-                : control.matches("[data-color-category]")
-                  ? "Color"
-                  : "Remove";
-            option.onclick = () => {
-              closeActionMenu(true);
-              control.click();
-            };
-            menu.append(option);
-          });
-          document.body.append(menu);
-          actionMenu = menu;
-          const rect = toggle.getBoundingClientRect();
-          menu.style.left = `${Math.max(8, Math.min(window.innerWidth - menu.offsetWidth - 8, rect.right - menu.offsetWidth))}px`;
-          menu.style.top = `${Math.max(8, rect.bottom + menu.offsetHeight > window.innerHeight - 8 ? rect.top - menu.offsetHeight : rect.bottom)}px`;
-          menu.querySelector("button:not(:disabled)")?.focus();
+      .forEach((actions) => addActionMenu(actions));
+  }
+
+  function addActionMenu(
+    actions,
+    name = actions.parentElement.querySelector("h3, h4, strong")?.textContent ||
+      "Entry",
+  ) {
+    const controls = [...actions.children].filter((button) =>
+      button.matches("button"),
+    );
+    if (!controls.length) return;
+    controls.forEach((button) => {
+      button.hidden = true;
+    });
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "ghost small-button entry-menu-toggle";
+    toggle.innerHTML =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>';
+    toggle.setAttribute("aria-label", `Actions for ${name}`);
+    toggle.setAttribute("aria-haspopup", "menu");
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.onclick = () => {
+      const wasOpen = menuToggle === toggle;
+      closeActionMenu();
+      if (wasOpen) return;
+      menuToggle = toggle;
+      toggle.setAttribute("aria-expanded", "true");
+      const menu = document.createElement("div");
+      menu.className = "entry-action-menu";
+      menu.setAttribute("role", "menu");
+      menu.setAttribute("aria-label", `Actions for ${name}`);
+      controls.forEach((control) => {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.setAttribute("role", "menuitem");
+        option.disabled = control.disabled;
+        option.textContent =
+          control.textContent.trim() === "×"
+            ? "Remove"
+            : control.textContent.trim();
+        option.onclick = () => {
+          closeActionMenu(true);
+          control.click();
         };
-        actions.append(toggle);
+        menu.append(option);
       });
+      (actions.closest("dialog") || document.body).append(menu);
+      actionMenu = menu;
+      const rect = toggle.getBoundingClientRect();
+      menu.style.left = `${Math.max(8, Math.min(window.innerWidth - menu.offsetWidth - 8, rect.right - menu.offsetWidth))}px`;
+      menu.style.top = `${Math.max(8, rect.bottom + menu.offsetHeight > window.innerHeight - 8 ? rect.top - menu.offsetHeight : rect.bottom)}px`;
+      menu.querySelector("button:not(:disabled)")?.focus();
+    };
+    actions.append(toggle);
   }
 
   document.addEventListener("click", (event) => {
+    if (!event.target.closest(".backup-help")) closeBackupHelp?.();
     if (
       actionMenu &&
       !actionMenu.contains(event.target) &&
@@ -266,9 +279,15 @@
       closeActionMenu();
   });
   document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && closeBackupHelp?.()) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     if (!actionMenu) return;
     if (event.key === "Escape") {
       event.preventDefault();
+      event.stopImmediatePropagation();
       closeActionMenu(true);
     } else if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
       event.preventDefault();
@@ -284,8 +303,14 @@
       ]?.focus();
     } else if (event.key === "Tab") closeActionMenu(true);
   });
-  window.addEventListener("scroll", () => closeActionMenu(), { passive: true });
-  window.addEventListener("resize", () => closeActionMenu());
+  window.addEventListener("scroll", () => {
+    closeActionMenu();
+    closeBackupHelp?.();
+  }, { passive: true });
+  window.addEventListener("resize", () => {
+    closeActionMenu();
+    closeBackupHelp?.();
+  });
 
   let gesture;
   let holdTimer;
@@ -740,7 +765,8 @@
         !form.closest("dialog") &&
         (form.offsetParent !== null ||
           (form.matches(".income-edit-form") && !form.hidden) ||
-          (includeRecovered && form.budgetRecoveredDraft)),
+          (includeRecovered &&
+            (form.budgetRecoveredDraft || !form.matches(".income-edit-form")))),
     );
   }
 
@@ -760,8 +786,10 @@
   }
 
   function captureSession() {
-    if (!currentState) return null;
+    if (!currentState || !activeBudget()) return null;
     return {
+      budgetId: activeBudget().id,
+      recoveryId: activeBudget().recoveryId,
       state: currentState,
       scroll: window.scrollY,
       forms: editorForms(true).map((form) => ({
@@ -779,46 +807,120 @@
     };
   }
 
-  function checkpoint(force = false) {
+  async function loadSessions() {
+    if (sessionsLoaded) return;
+    if (sessionLoad) return sessionLoad;
+    sessionLoad = (async () => {
+      const raw = await platform.loadSession();
+      if (raw != null) {
+        const stored = JSON.parse(raw);
+        if (
+          stored.schema === "MyBudgeter-sessions-v1" &&
+          stored.budgets &&
+          typeof stored.budgets === "object" &&
+          !Array.isArray(stored.budgets)
+        ) {
+          sessions = stored;
+        } else if (stored.state && activeBudget()) {
+          sessions.budgets[activeBudget().id] = {
+            ...stored,
+            budgetId: activeBudget().id,
+            recoveryId: activeBudget().recoveryId,
+          };
+        } else throw new Error("Invalid draft recovery data.");
+      }
+      sessionsLoaded = true;
+    })();
+    try {
+      await sessionLoad;
+    } finally {
+      sessionLoad = null;
+    }
+  }
+
+  function checkpoint(force = false, strict = false) {
     clearTimeout(sessionTimer);
+    if (budgetTransition && !strict && !force) return sessionQueue;
     flushSave();
-    if (force) initialized = true;
-    if (!android || !initialized || restoring || !currentState) return;
-    const value = JSON.stringify(captureSession());
-    if (value === checkpointValue) return;
+    if (restoring || !currentState || !activeBudget()) return sessionQueue;
+    if (!sessionsLoaded) {
+      return loadSessions().then(
+        () => checkpoint(force, strict),
+        (error) => {
+          saveError = `Editor recovery could not be saved: ${error.message}`;
+          showStorageError();
+          if (strict) throw error;
+        },
+      );
+    }
+    const snapshot = captureSession();
+    const value = JSON.stringify(snapshot);
+    if (value === checkpointValue)
+      return strict ? checkpointWrite : sessionQueue;
     checkpointValue = value;
-    platform.saveSession(value).catch((error) => {
-      checkpointValue = "";
+    sessions.budgets[snapshot.budgetId] = JSON.parse(value);
+    const payload = JSON.stringify(sessions);
+    const write = sessionQueue.then(() => platform.saveSession(payload));
+    checkpointWrite = write;
+    sessionQueue = write.catch((error) => {
+      if (checkpointValue === value) checkpointValue = "";
       saveError = `Editor recovery could not be saved: ${error.message}`;
       showStorageError();
     });
+    return write.then(
+      () => {
+        if (saveError.startsWith("Editor recovery could not be saved:")) {
+          saveError = "";
+          document.querySelector(".storage-error")?.remove();
+        }
+      },
+      (error) => {
+        if (strict) throw error;
+      },
+    );
+  }
+
+  async function clearRecovery(budgetId) {
+    try {
+      await loadSessions();
+      delete sessions.budgets[budgetId];
+      checkpointValue = "";
+      const payload = JSON.stringify(sessions);
+      const write = sessionQueue.then(() => platform.saveSession(payload));
+      sessionQueue = write.catch(() => {});
+      await write;
+    } catch (error) {
+      window.alert(`Editor recovery could not be cleared: ${error.message}`);
+    }
   }
 
   async function restore() {
-    if (!android) return;
-    let raw;
+    restoring = true;
+    checkpointValue = "";
     try {
-      raw = await platform.loadSession();
+      await loadSessions();
     } catch (error) {
       window.alert(`Editor recovery is unavailable: ${error.message}`);
+      restoring = false;
       return;
-    } finally {
-      initialized = true;
     }
-    if (!raw) return;
     try {
-      const session = JSON.parse(raw);
+      const session = sessions.budgets[activeBudget()?.id];
+      if (
+        !session ||
+        session.budgetId !== activeBudget()?.id ||
+        session.recoveryId !== activeBudget()?.recoveryId
+      ) {
+        window.scrollTo(0, 0);
+        return;
+      }
       const state = budget.normalizeSaveState(session.state);
       state.app.editingIncomeId = "";
-      const committedData = (value) =>
-        JSON.stringify({
-          incomes: value.incomes,
-          categories: value.categories,
-          expenses: value.expenses,
-          notes: value.notes,
-        });
-      if (committedData(state) !== committedData(currentState)) return;
-      restoring = true;
+      if (
+        window.budgetLibrary.fingerprint(state) !==
+        window.budgetLibrary.fingerprint(currentState)
+      )
+        return;
       currentState = state;
       render(state);
       for (const saved of session.forms || []) {
@@ -858,6 +960,8 @@
   }
 
   function handleBack() {
+    if (budgetTransition) return true;
+    if (closeBackupHelp?.()) return true;
     if (actionMenu) {
       closeActionMenu(true);
       return true;
@@ -890,24 +994,31 @@
     return true;
   }
 
-  window.budgetMobile = { restore, checkpoint, handleBack };
+  window.budgetMobile = {
+    restore,
+    checkpoint,
+    clearRecovery,
+    handleBack,
+    addActionMenu,
+    closeActionMenu,
+  };
   window.addEventListener("budget-render", () => {
     enhance();
-    if (!restoring) checkpoint();
+    if (!restoring && !budgetTransition) checkpoint();
   });
   document.addEventListener("input", () => {
-    if (android && !restoring) {
+    if (!restoring && !budgetTransition) {
       clearTimeout(sessionTimer);
       sessionTimer = setTimeout(checkpoint, 150);
     }
   });
   document.addEventListener("change", () => {
-    if (android && !restoring) checkpoint();
+    if (!restoring && !budgetTransition) checkpoint();
   });
   window.addEventListener(
     "scroll",
     () => {
-      if (android && !restoring) {
+      if (!restoring && !budgetTransition) {
         clearTimeout(sessionTimer);
         sessionTimer = setTimeout(checkpoint, 150);
       }
@@ -926,4 +1037,5 @@
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") checkpoint();
   });
+  window.addEventListener("pagehide", () => checkpoint());
 })();

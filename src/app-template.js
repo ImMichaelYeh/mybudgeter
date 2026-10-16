@@ -1,4 +1,10 @@
-function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
+function renderApp(
+  state,
+  summary,
+  categories,
+  allExpenses,
+  budgetName = "No Budget Selected",
+) {
   const money = window.budget.formatMoney;
   const escapeHtml = (value) =>
     String(value ?? "").replace(
@@ -218,22 +224,25 @@ function renderApp(state, summary, categories, allExpenses, saveMessage = "") {
 
   const categoryTotal = window.budget.getCategoryPercentageTotal(state);
   return `
-    <nav class="site-header" aria-label="Site navigation">
-      <a class="site-brand" href="https://immichaelyeh.github.io/">Michael Yeh</a>
-    </nav>
-
-    <header class="app-header">
-      <div>
-        <h1>My Budget Planner <span class="app-version">v${window.budget.APP_VERSION}</span></h1>
-        <p class="small">My budget planner is designed to help you categorize your income.</p>
+    <template data-portfolio-banner>
+      <nav class="site-header" aria-label="Site navigation">
+        <a class="site-brand" href="https://immichaelyeh.github.io/">Michael Yeh</a>
+      </nav>
+    </template>
+    <header class="site-header app-header" aria-label="Active Budget">
+      <div class="budget-heading">
+        <h1 class="site-brand budget-banner-name">${escapeHtml(budgetName)}</h1>
       </div>
       <div class="actions">
-        <span class="save-status" data-save-status>${escapeHtml(saveMessage)}</span>
         <button type="button" data-download-save aria-label="Download Save File" title="Download Save File"><svg class="backup-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h11l3 3v4M3 3v18h9M7 3v6h6V3M7 21v-7h4M18 12v9m-4-4 4 4 4-4" /></svg><span class="backup-label">Download save file</span></button>
         <label class="button-like secondary" title="Import Save File" aria-label="Import Save File">
           <svg class="backup-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h11l3 3v4M3 3v18h9M7 3v6h6V3M7 21v-7h4M18 21v-9m-4 4 4-4 4 4" /></svg><span class="backup-label">Import save file</span>
           <input data-import-save type="file" accept="application/json,.json" />
         </label>
+        ${window.budgetPlatform?.isAndroid ? "" : `<div class="backup-help">
+          <button type="button" class="ghost backup-help-button" data-backup-help aria-label="Autosave and Backup Help" aria-expanded="false" aria-controls="backup-help-tooltip" aria-describedby="backup-help-tooltip">?</button>
+          <p id="backup-help-tooltip" class="backup-help-tooltip" role="tooltip" hidden>Autosave is Enabled. Download the active budget for a safe backup.<br>Importing a save file replaces only the active budget.</p>
+        </div>`}
       </div>
     </header>
 

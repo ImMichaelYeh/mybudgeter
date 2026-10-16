@@ -8,6 +8,10 @@ let saveQueue = Promise.resolve();
 let saveError = "";
 let saveRevision = 0;
 let activityHistory;
+let budgetCollection;
+let budgetTransition = false;
+const budgetHistories = new Map();
+
 let draggedType = "";
 let draggedExpenseId = "";
 let draggedGroupName = "";
@@ -27,6 +31,52 @@ const GROUP_PATH_SEPARATOR = budget.GROUP_SEPARATOR;
 
 const id = () => crypto.randomUUID();
 
+function activeBudget() {
+  return budgetCollection?.budgets.find(
+    (entry) => entry.id === budgetCollection.activeBudgetId,
+  );
+}
+
+function selectBudgetState() {
+  currentState = activeBudget()
+    ? window.budgetLibrary.clone(activeBudget().data)
+    : budget.createEmptyState();
+  currentState.app.editingIncomeId = "";
+  if (!platform.isMobile && activeBudget()) {
+    if (!budgetHistories.has(activeBudget().id))
+      budgetHistories.set(
+        activeBudget().id,
+        window.budgetHistory.create(currentState),
+      );
+    activityHistory = budgetHistories.get(activeBudget().id);
+  } else activityHistory = null;
+}
+
+async function changeBudgetLibrary(change) {
+  if (budgetTransition) return false;
+  budgetTransition = true;
+  app.inert = true;
+  try {
+    await window.budgetMobile.checkpoint(false, true);
+    await flushSave();
+    if (saveError) throw new Error(saveError);
+    const next = change(window.budgetLibrary.clone(budgetCollection));
+    await platform.save(JSON.stringify(next));
+    budgetCollection = next;
+    selectBudgetState();
+    categoryToFocus = "";
+    elementToScrollTo = "";
+    render(currentState);
+    await window.budgetMobile.restore();
+    return true;
+  } catch (error) {
+    window.alert(`Could not update budgets: ${error.message}`);
+    return false;
+  } finally {
+    budgetTransition = false;
+    app.inert = false;
+  }
+}
 function applyCategoryColor(column, color) {
   column?.style.setProperty("--accent", color);
 }
@@ -100,7 +150,10 @@ function fitMoneyDisplays() {
       width -= [...parent.children]
         .filter((child) => child !== element)
         .reduce(
-          (total, child) => total + child.getBoundingClientRect().width + parseFloat(style.columnGap || 0),
+          (total, child) =>
+            total +
+            child.getBoundingClientRect().width +
+            parseFloat(style.columnGap || 0),
           0,
         );
     }
@@ -566,7 +619,10 @@ function moveCategory(state, sourceId, targetId, placement) {
 function downloadSaveFile(state) {
   if (platform.isAndroid) {
     platform
-      .exportFile(JSON.stringify(budget.createSavePayload(state), null, 2))
+      .exportFile(
+        JSON.stringify(budget.createSavePayload(state), null, 2),
+        activeBudget()?.id,
+      )
       .catch((error) => window.alert(error.message));
     return;
   }
@@ -584,15 +640,22 @@ function downloadSaveFile(state) {
 
 async function loadState() {
   const raw = await platform.load();
-  return raw
-    ? budget.normalizeSaveState(JSON.parse(raw))
-    : budget.createEmptyState();
+  const value = raw == null ? null : JSON.parse(raw);
+  if (raw != null && value === null) throw new Error("Invalid budget library.");
+  budgetCollection = window.budgetLibrary.normalize(value);
+  if (value && value.schema !== window.budgetLibrary.schema)
+    await platform.save(JSON.stringify(budgetCollection));
+  selectBudgetState();
+  return currentState;
 }
 
 function saveState(state, recordHistory = true) {
+  const entry = activeBudget();
+  if (!entry) return;
   if (recordHistory) activityHistory?.record(state);
+  entry.data = JSON.parse(JSON.stringify(budget.createSavePayload(state)));
   pendingSave = {
-    value: JSON.stringify(budget.createSavePayload(state)),
+    value: JSON.stringify(budgetCollection),
     revision: ++saveRevision,
   };
   clearTimeout(saveTimer);
@@ -609,7 +672,6 @@ function flushSave() {
       await platform.save(value);
       saveError = "";
       document.querySelector(".storage-error")?.remove();
-      showSaved();
     } catch (error) {
       if (revision === saveRevision) pendingSave ||= { value, revision };
       saveError = `Budget not saved: ${error.message}`;
@@ -631,49 +693,70 @@ function showStorageError() {
   retry.textContent = "Retry Save";
   retry.addEventListener("click", () => {
     saveState(currentState);
+    window.budgetMobile.checkpoint(true);
     flushSave();
   });
   message.append(retry);
   app.prepend(message);
 }
 
-async function importBudget(value) {
+async function importBudget(
+  value,
+  budgetId = budgetCollection?.activeBudgetId,
+) {
   if (value == null) return;
+  if (budgetTransition || app.inert) return;
   try {
+    if (
+      budgetId !== budgetCollection?.activeBudgetId ||
+      (budgetId && !activeBudget())
+    )
+      throw new Error(
+        "The selected budget changed. Select the file again for the intended budget.",
+      );
     const replacement = budget.normalizeSaveState(JSON.parse(value));
     if (
       !window.confirm("Importing will overwrite the current budget. Continue?")
     )
       return;
+    budgetTransition = true;
     app.inert = true;
     app.setAttribute("aria-busy", "true");
     await flushSave();
-    const payload = JSON.stringify(budget.createSavePayload(replacement));
-    await platform.save(payload);
+    if (saveError) throw new Error(saveError);
+    const next = activeBudget()
+      ? window.budgetLibrary.clone(budgetCollection)
+      : window.budgetLibrary.add(
+          window.budgetLibrary.normalize(null),
+          "My Budget",
+          replacement,
+          id(),
+        );
+    const target = next.budgets.find(
+      (entry) => entry.id === next.activeBudgetId,
+    );
+    target.data = budget.createSavePayload(replacement);
+    target.recoveryId = id();
+    await platform.save(JSON.stringify(next));
+    budgetCollection = next;
     pendingSave = null;
     saveError = "";
     currentState = replacement;
     if (!platform.isMobile && !activityHistory)
       activityHistory = window.budgetHistory.create(currentState);
     else activityHistory?.record(currentState);
+    if (activityHistory)
+      budgetHistories.set(budgetCollection.activeBudgetId, activityHistory);
+    await window.budgetMobile.clearRecovery(budgetCollection.activeBudgetId);
     render(currentState);
-    showSaved();
-    window.budgetMobile?.checkpoint(true);
+    await window.budgetMobile?.checkpoint(true);
   } catch (error) {
     window.alert(`Could not import the budget: ${error.message}`);
   } finally {
+    budgetTransition = false;
     app.inert = false;
     app.removeAttribute("aria-busy");
   }
-}
-
-function showSaved(message = "Saved") {
-  const status = document.querySelector("[data-save-status]");
-  if (!status) return;
-  status.textContent = message;
-  status.setAttribute("role", "status");
-  status.classList.add("visible");
-  setTimeout(() => status.classList.remove("visible"), 1400);
 }
 
 function render(state) {
@@ -692,11 +775,12 @@ function render(state) {
     budget.getBudgetSummary(state),
     budget.sortCategories(state),
     budget.sortExpenses(state.expenses, state.app.expenseSort),
+    activeBudget()?.name || "No Budget Selected",
   );
   wireEvents(state);
   const footer = document.createElement("footer");
   footer.className = "app-footer";
-  footer.innerHTML = `Michael Yeh <span aria-hidden="true">&copy;</span> ${new Date().getFullYear()}`;
+  footer.innerHTML = `${platform.isMobile ? "" : `<div class="app-footer-version">My Budget Planner v${budget.APP_VERSION}</div>`}Michael Yeh <span aria-hidden="true">&copy;</span> ${new Date().getFullYear()}`;
   app.append(footer);
   if (categoryToFocus) {
     document
@@ -738,7 +822,7 @@ function render(state) {
 function hasOpenBudgetEditor() {
   return Boolean(
     document.querySelector(
-      '.expense-form, .expense-edit-form, .category-edit-form, .group-rename-form, .income-edit-form:not([hidden])',
+      ".expense-form, .expense-edit-form, .category-edit-form, .group-rename-form, .income-edit-form:not([hidden])",
     ),
   );
 }
@@ -890,8 +974,8 @@ function wireEvents(state) {
         </details>
         <details class="faq-question">
           <summary>How do saving, downloading, and importing work?</summary>
-          <p>Your working budget automatically saves in this browser's local storage shortly after changes are made. Use Download Save File to create a JSON backup containing your income, categories, items, notes, organization, colors, and relevant preferences. Keep downloaded files somewhere you control if the information is important to you.</p>
-          <p>Use Import Save File to restore a downloaded MyBudgeter JSON file or move a budget to another browser or device. Importing replaces the current budget after confirmation, so download a backup first if you may want to keep the existing budget. Save files record the app version and are designed to remain compatible within the same major version.</p>
+          <p>Your budgets automatically save in this browser's local storage shortly after changes are made. Use the menu beside the budget name to create, switch, rename, duplicate, or delete budgets. Each budget keeps its own data, preferences, and unfinished forms across reloads. Use Download Save File to back up only the active budget, including its income, categories, items, notes, organization, colors, and relevant preferences. Budget names and unfinished forms are local and are not included in backups. Keep downloaded files somewhere you control if the information is important to you.</p>
+          <p>Use Import Save File to restore a downloaded MyBudgeter JSON file or move a budget to another browser or device. Importing replaces only the active budget after confirmation and keeps its local name. Other budgets are unchanged. Create a budget first if you want to import into a separate budget, or download a backup before replacing an existing one. Save files record the app version and remain compatible within the same major version.</p>
         </details>
         <details class="faq-question">
           <summary>Where is my data stored and who can see it?</summary>
@@ -924,14 +1008,6 @@ function wireEvents(state) {
     saveState(state);
     window.budgetMobile?.checkpoint();
   });
-  const saveActions = document.querySelector("header .actions");
-  if (saveActions && !platform.isAndroid) {
-    const help = document.createElement("p");
-    help.className = "save-help";
-    help.innerHTML =
-      "Download the autosave file for a safe backup.<br>Importing a save file replaces the current budget.";
-    saveActions.append(help);
-  }
   const categoryMeta = document.querySelector(".category-form-meta");
   if (categoryMeta) {
     const categoryTotal = budget.getCategoryPercentageTotal(state);
@@ -1243,7 +1319,12 @@ function wireEvents(state) {
     const expense = state.expenses.find(
       (item) => item.id === row.dataset.expenseId,
     );
-    if (!expense || row.querySelector("form") || Number(expense.multiplier) === 1) return;
+    if (
+      !expense ||
+      row.querySelector("form") ||
+      Number(expense.multiplier) === 1
+    )
+      return;
     const detail = row.querySelector(".small");
     if (detail)
       detail.textContent = `${formatCurrency(expense.amount)} × ${expense.multiplier} = ${formatCurrency(expense.amount * expense.multiplier)} / ${expense.frequency}`;
@@ -1325,7 +1406,8 @@ function wireEvents(state) {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const data = formValues(form);
-      if (!data.name || !Number.isFinite(data.amount) || data.amount < 0) return;
+      if (!data.name || !Number.isFinite(data.amount) || data.amount < 0)
+        return;
       state.expenses.push({
         ...data,
         id: id(),
@@ -1343,7 +1425,8 @@ function wireEvents(state) {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const data = formValues(form);
-      if (!data.name || !Number.isFinite(data.amount) || data.amount < 0) return;
+      if (!data.name || !Number.isFinite(data.amount) || data.amount < 0)
+        return;
       const expense = state.expenses.find(
         (item) => item.id === form.dataset.editExpenseForm,
       );
@@ -1354,13 +1437,14 @@ function wireEvents(state) {
       render(state);
     }),
   );
+  const importTargetBudgetId = activeBudget()?.id;
   document
     .querySelector("[data-import-save]")
     ?.addEventListener("change", async (event) => {
       const file = event.target.files?.[0];
       if (!file) return;
       try {
-        await importBudget(await file.text());
+        await importBudget(await file.text(), importTargetBudgetId);
       } catch (error) {
         window.alert(`Could not read the save file: ${error.message}`);
       } finally {
@@ -1623,7 +1707,9 @@ app?.addEventListener("click", (event) => {
       (item) => item.id !== button.dataset.removeIncome,
     );
   else if (button.matches("[data-remove-category]")) {
-    delete currentState.app.collapsedCategories?.[button.dataset.removeCategory];
+    delete currentState.app.collapsedCategories?.[
+      button.dataset.removeCategory
+    ];
     currentState.categories = currentState.categories.filter(
       (item) => item.id !== button.dataset.removeCategory,
     );
@@ -1737,7 +1823,8 @@ app?.addEventListener("dragover", (event) => {
     draggedType === "category"
       ? getCategoryGapTarget(event.target, event.clientX, event.clientY)
       : null;
-  const category = categoryGap?.node || event.target.closest("[data-category-id]");
+  const category =
+    categoryGap?.node || event.target.closest("[data-category-id]");
   const item = gapTarget
     ? gapTarget.matches(".expense-item")
       ? gapTarget
@@ -2555,7 +2642,8 @@ app?.addEventListener("drop", (event) => {
 window.addEventListener("budget-document-result", (event) => {
   const result = event.detail;
   if (result.error) window.alert(result.error);
-  else if (result.operation === "import") importBudget(result.value);
+  else if (result.operation === "import")
+    importBudget(result.value, result.budgetId);
 });
 
 document.addEventListener("visibilitychange", () => {
@@ -2580,31 +2668,40 @@ document.addEventListener("keydown", (event) => {
         : field.matches("input,textarea,select") &&
           field.value !==
             (field.tagName === "SELECT"
-              ? [...field.options].find((option) => option.defaultSelected)?.value
+              ? [...field.options].find((option) => option.defaultSelected)
+                  ?.value
               : field.defaultValue),
     ),
   );
-  if (dirty && !window.confirm("Discard unsaved form changes before undo/redo?"))
+  if (
+    dirty &&
+    !window.confirm("Discard unsaved form changes before undo/redo?")
+  )
     return;
   currentState = activityHistory[action]();
   categoryToFocus = "";
   elementToScrollTo = "";
   saveState(currentState, false);
   render(currentState);
-  showSaved(action === "undo" ? "Undone" : "Redone");
+  const status = document.querySelector("[data-history-status]");
+  if (status) status.textContent = action === "undo" ? "Undone" : "Redone";
 });
 
 async function startApp() {
   try {
+    budgetTransition = true;
+    app.inert = true;
     const display = await platform.displayCurrency();
     budget.setCurrencyDisplay(display.locale, display.currency);
     currentState = await loadState();
-    currentState.app.editingIncomeId = "";
-    if (!platform.isMobile)
-      activityHistory = window.budgetHistory.create(currentState);
     render(currentState);
     await window.budgetMobile?.restore();
+    budgetTransition = false;
+    app.inert = false;
+    if (!activeBudget()) window.budgetLibraryUI.create();
   } catch (error) {
+    budgetTransition = false;
+    app.inert = false;
     const card = document.createElement("section");
     card.className = "card recovery-card";
     const heading = document.createElement("h1");

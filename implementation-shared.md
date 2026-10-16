@@ -5,10 +5,26 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 ## Application model and save compatibility
 
 - MyBudgeter is a client-side budgeting app with no server dependency.
-- A small semantic app version appears after the desktop app title and directly beneath the title on phone layouts. Android and browser use the same APP_VERSION; it stays unchanged during iteration until the preceding version is committed to GitHub or the user explicitly requests a bump.
-- Export creates a JSON backup of the full budget. Importing a save replaces the current budget after confirmation. Each file records the current semantic app version and a schema tied to its major version.
+- Browser and Android retain shared APP_VERSION for builds and backup compatibility. The visible page header contains the active budget name instead of the app title, version, or subtitle; the document title and Android launcher remain My Budget Planner. Version changes remain deferred until the preceding version is committed or the user explicitly requests a bump.
+- Export creates a JSON backup of the active budget only. Importing a save replaces only that budget's contents after confirmation, retaining its local name and ID. Each file records the current semantic app version and a schema tied to its major version; the single-budget backup schema is unchanged.
 - The exported state includes incomes, categories, items, notes, ordering, colors, grouping, collapse state, and relevant app preferences.
 - Normalization keeps older saves from the current major version usable and supplies defaults for newer fields. A new major version is reserved for a save-format change that cannot import earlier files; backwards-compatible product changes use a minor version and fixes or non-visible changes use a patch version.
+
+## Multiple budgets
+
+- The header budget-menu button is square and matches the backup controls' height: 40px on desktop and 48px on phone layouts.
+- A 12px gap separates the budget name from its adjacent hamburger button on every platform.
+- Browsers have a circular ? button beside export/import instead of permanent backup-help text; Android omits it and explains backups through its native confirmation popups. Hover, keyboard focus, or click opens a themed tooltip with “Autosave is Enabled. Download the active budget for a safe backup.” and “Importing a save file replaces only the active budget.” Click pins/toggles it; outside click, Escape, blur, scroll, or resize dismisses it. The button exposes its expanded state and description; the tooltip wraps within the viewport.
+- All platforms use one navy banner with the active budget name as the page heading. The budgets hamburger sits immediately before the name; export/import remain grouped on the right. The title, version, and subtitle are omitted from the visible header. Names wrap with space reserved for controls; mobile controls retain 48px targets. The banner updates on switching and renaming, and retains a 16px gap above Net Income, matching the spacing between section cards. The original Michael Yeh banner and shared portfolio styles remain preserved.
+- The Budgets dropdown closes through an X in its top-right corner, with an accessible name and 48px touch target beside the heading. The heading has a compact 32px minimum height and an 8px gap before the budget list; it can grow with enlarged text.
+- A hamburger button immediately before the active budget name opens a themed dropdown below the button listing budgets in creation order. The dropdown stays within the viewport, scrolls internally when needed, and closes on page scroll or resize. The dropdown highlights the active budget. The dropdown supports opening, creating, renaming, duplicating, and deleting budgets; selecting an action, clicking outside, Escape, and Android Back dismiss it. Focus stays within the dropdown/dialog and returns to the trigger on dismissal. The menu remains available before the first budget is created; its button exposes expanded state.
+- Each budget is one compact box sharing a background and border around its name and circular hamburger. The name opens the budget; the hamburger inside the same box uses the action menu shared with items/groups, containing Rename, Duplicate, and Delete. Escape or Android Back closes this action menu first, retaining the budget dropdown; selecting an action closes the action menu. Inline action buttons are hidden. Names are trimmed, required, at most 100 characters, and unique ignoring case. New names start with My Budget, adding a number when needed. Duplicate asks for a name, initially Original Name Copy, and opens an independent copy of committed data and preferences without unfinished forms or undo history.
+- Creation offers 50/30/20 (Needs 50%, Wants 30%, Savings 20%), 70/20/10 (Spending 70%, Savings 20%, Debt 10%), Equal Thirds (Needs 33.33%, Wants 33.33%, Savings 33.34%), and Blank (no categories). Only Savings is marked as savings. Templates contain no income, items, or notes. 50/30/20 is always preselected.
+- With no budgets, setup opens automatically. Dismissing first-budget setup, including Android Back, creates My Budget using 50/30/20. Canceling creation with an existing budget changes nothing. Existing single-budget installations migrate to My Budget without setup or content changes.
+- Budget deletion always requires a confirmation naming the budget and cannot be undone through content history. Deleting the active budget opens the first remaining budget. Deleting the final budget opens first-budget setup again.
+- Local autosave stores a validated MyBudgeter-library-v1 envelope containing active ID, ordered budget entries, names, recovery identities, and existing budget payloads. Exported files contain no library metadata. Legacy migration and library transitions persist before switching; failed writes preserve the previous storage and working budget.
+- Each budget retains unfinished editor fields and scroll position across switching and reload/relaunch. Recovery is stored separately, bound to the budget ID, recovery identity, and matching committed data/preferences. Imports rotate recovery identity and clear old drafts; deleting a budget removes its recovery. Income drafts remain hidden until Edit, as before.
+- Switching captures drafts and flushes pending saves first. Recovery/save failures keep the current budget open and offer Retry Save. Queued content saves remain tied to their originating budget; stale file-picker imports cannot replace another budget. Browser and Android libraries remain separate with no automatic sync.
 
 ## Page layout and global conventions
 
@@ -124,9 +140,10 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 
 - `index.html` loads the app shell and browser scripts.
 - `src/budget.js` owns state defaults, import validation/normalization, sorting, budget calculations, and mobile organization operations.
+- `src/library.js` owns library validation, migration, templates, names, independent copies, and recovery fingerprints; `src/library-ui.js` supplies the budget dropdown and management dialogs.
 - `src/platform.js` provides browser storage or restricted Android messaging.
 - `src/history.js` provides isolated budget snapshots and shortcut matching for desktop session undo/redo; mobile platforms do not enable it.
-- `src/mobile.js` enhances phone accessibility, Android touch dragging/Move controls, and draft/scroll recovery.
+- `src/mobile.js` enhances phone accessibility and touch dragging/Move controls, and provides shared per-budget draft/scroll recovery on browser and Android.
 - `src/app-template.js` renders the base HTML for the main sections.
 - `src/main.js` manages persistence, events, dynamic UI, form labeling, collapse controls, confirmation dialogs, grouping, drag and drop, and import/export.
 - `src/style.css` contains the responsive layout, card colors, controls, and drag/drop indicators.
@@ -136,5 +153,5 @@ This document records the intentionally implemented behavior of MyBudgeter. Trea
 
 - Import validates the schema, collection shapes, safe unique identifiers, text fields, finite nonnegative numeric fields, frequencies, and editor/group preferences before confirmation. Legacy numeric strings remain supported.
 - Replacement imports persist successfully before becoming the working budget. Invalid files and canceled imports leave the current budget unchanged.
-- Failed saves retain working changes and offer Retry Save; Saved appears only after successful persistence. Unreadable saved data is preserved with recovery controls instead of silently resetting.
+- Autosave runs silently, without header text, cursor/tap indicators, or success announcements. Failed saves retain working changes and offer Retry Save. Undo/redo still announces its action to assistive technology. Unreadable saved data is preserved with recovery controls instead of silently resetting.
 - Input fields use visible labels and decimal keyboard hints. Destructive dialogs have named dialog semantics, focus trapping, and Escape cancellation.
