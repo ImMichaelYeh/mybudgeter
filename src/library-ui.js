@@ -41,6 +41,7 @@
     };
     document.addEventListener("keydown", handleKey);
     panel.addEventListener("click", (event) => {
+      if (panel.dataset.submitting === "true") return;
       if (event.target === panel) {
         const bounds = panel.getBoundingClientRect();
         if (
@@ -100,12 +101,24 @@
     label.append(name);
     form.append(label);
     let selected = "50/30/20";
+    const fileLabel = document.createElement("label");
+    fileLabel.textContent = "Budget Backup File";
+    fileLabel.hidden = true;
+    const file = document.createElement("input");
+    file.type = "file";
+    file.name = "budgetBackup";
+    file.accept = "application/json,.json";
+    fileLabel.append(file);
     if (!source) {
       const choices = document.createElement("fieldset");
       const legend = document.createElement("legend");
-      legend.textContent = "Budgeting Strategy";
+      legend.textContent = "Start With";
       choices.append(legend);
-      for (const template of library.templates) {
+      const options = [
+        ...library.templates,
+        { id: "import", label: "Import a File", categories: [] },
+      ];
+      for (const template of options) {
         const choice = document.createElement("label");
         choice.className = "budget-template";
         const input = document.createElement("input");
@@ -115,6 +128,9 @@
         input.checked = template.id === selected;
         input.addEventListener("change", () => {
           selected = input.value;
+          fileLabel.hidden = selected !== "import" || platform.isAndroid;
+          file.required = selected === "import" && !platform.isAndroid;
+          submit.textContent = selected === "import" ? "Import Budget" : "Create";
         });
         const text = document.createElement("span");
         const title = document.createElement("strong");
@@ -124,12 +140,15 @@
         detail.textContent =
           template.categories
             .map(([category, percentage]) => `${category} ${percentage}%`)
-            .join(" · ") || "Start Without Categories";
+            .join(" · ") ||
+          (template.id === "import"
+            ? "Create a New Budget From a Backup"
+            : "Start Without Categories");
         text.append(title, detail);
         choice.append(input, text);
         choices.append(choice);
       }
-      form.append(choices);
+      form.append(choices, fileLabel);
     }
     const error = document.createElement("p");
     error.setAttribute("role", "alert");
@@ -139,14 +158,16 @@
     const submit = document.createElement("button");
     submit.type = "submit";
     submit.textContent = rename ? "Save" : source ? "Duplicate" : "Create";
+    let completed = false;
+    let submitting = false;
     actions.append(
       submit,
-      button("Cancel", () => panel.close(), true),
+      button("Cancel", () => {
+        if (!submitting) panel.close();
+      }, true),
     );
     form.append(error, actions);
     panel.append(form);
-    let completed = false;
-    let submitting = false;
     async function save(defaults = false) {
       if (submitting) return;
       try {
@@ -157,18 +178,34 @@
         );
         submitting = true;
         submit.disabled = true;
-        const success = await changeBudgetLibrary((next) => {
-          if (rename) {
-            next.budgets.find((entry) => entry.id === sourceId).name = newName;
-            return next;
+        panel.dataset.submitting = "true";
+        panel.setAttribute("aria-busy", "true");
+        let success;
+        if (!defaults && selected === "import" && !source) {
+          const request = { id: id(), name: newName };
+          let value;
+          if (platform.isAndroid) {
+            value = await platform.importFile(`new-budget:${JSON.stringify(request)}`);
+          } else {
+            if (!file.files[0]) throw new Error("Choose a budget backup file.");
+            value = await file.files[0].text();
           }
-          const data = source
-            ? library.committedState(
-                next.budgets.find((entry) => entry.id === sourceId).data,
-              )
-            : library.templateState(defaults ? "50/30/20" : selected);
-          return library.add(next, newName, data, id());
-        });
+          if (value == null) return;
+          success = await importNewBudget(value, request);
+        } else {
+          success = await changeBudgetLibrary((next) => {
+            if (rename) {
+              next.budgets.find((entry) => entry.id === sourceId).name = newName;
+              return next;
+            }
+            const data = source
+              ? library.committedState(
+                  next.budgets.find((entry) => entry.id === sourceId).data,
+                )
+              : library.templateState(defaults ? "50/30/20" : selected);
+            return library.add(next, newName, data, id());
+          });
+        }
         if (success) {
           completed = true;
           panel.close();
@@ -179,6 +216,8 @@
       } finally {
         submitting = false;
         submit.disabled = false;
+        delete panel.dataset.submitting;
+        panel.removeAttribute("aria-busy");
       }
     }
     form.addEventListener("submit", (event) => {
@@ -189,7 +228,7 @@
       if (submitting) event.preventDefault();
     });
     panel.addEventListener("close", () => {
-      if (first && !completed && !submitting) save(true);
+      if (first && !activeBudget() && !completed && !submitting) save(true);
     });
     panel.showModal();
   }
@@ -250,6 +289,12 @@
       const actions = document.createElement("div");
       actions.className = "actions budget-row-actions";
       actions.append(
+        button("Download save file", () => {
+          const target = budgetCollection.budgets.find((budget) => budget.id === entry.id);
+          if (!target) return;
+          panel.close();
+          downloadSaveFile(library.committedState(target.data), target.id);
+        }, true),
         button(
           "Rename",
           () => {
@@ -294,7 +339,7 @@
     }
     panel.append(
       list,
-      button("Create Budget", () => {
+      button("Create or Import Budget", () => {
         panel.close();
         create();
       }),
@@ -310,24 +355,30 @@
 
   window.addEventListener("budget-render", () => {
     const header = document.querySelector(".app-header");
-    const actions = header?.querySelector(".actions");
     const heading = header?.querySelector(".budget-heading");
-    if (!actions || !heading) return;
-    const trigger = button("☰", open, true);
+    if (!heading) return;
+    const trigger = button("", open, true);
+    trigger.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14" /></svg>';
     trigger.dataset.budgetMenu = "";
     trigger.className = "ghost budget-menu-button";
     trigger.setAttribute("aria-label", "Open Budgets Menu");
     trigger.setAttribute("aria-haspopup", "dialog");
     trigger.setAttribute("aria-expanded", "false");
     if (!activeBudget()) {
-      [...actions.children].forEach((control) => {
-        control.hidden = true;
-      });
       app.querySelectorAll(":scope > section").forEach((section) => {
         section.hidden = true;
       });
     }
-    heading.prepend(trigger);
+    heading.append(trigger);
   });
-  window.budgetLibraryUI = { create, open };
+  async function restoreImport(result) {
+    try {
+      const request = JSON.parse(result.budgetId.slice("new-budget:".length));
+      if (await importNewBudget(result.value, request))
+        document.querySelector(".budget-dialog")?.close();
+    } catch (error) {
+      window.alert(`Could not import the budget: ${error.message}`);
+    }
+  }
+  window.budgetLibraryUI = { create, open, restoreImport };
 })();

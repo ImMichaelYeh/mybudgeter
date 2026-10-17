@@ -323,7 +323,9 @@
       if (
         isAndroid &&
         !window.confirm(
-          "Import Save File\n\nChoose a backup file to replace the active budget. Other budgets stay unchanged.\n\nExport first if you want to keep a copy.",
+          budgetId.startsWith("new-budget:")
+            ? "Import Budget\n\nChoose a backup file to create a new budget. Existing budgets stay unchanged."
+            : "Import Save File\n\nChoose a backup file to replace the active budget. Other budgets stay unchanged.\n\nExport first if you want to keep a copy.",
         )
       )
         return Promise.resolve(null);
@@ -333,7 +335,7 @@
       if (
         isAndroid &&
         !window.confirm(
-          "Export Save File\n\nYour budgets autosave on this device.\n\nSave a backup of the active budget to a file. Your budget stays unchanged.",
+          "Download Budget\n\nYour budgets autosave on this device.\n\nSave a backup of the selected budget to a file. Your budgets stay unchanged.",
         )
       )
         return Promise.resolve(null);

@@ -4,6 +4,59 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
+test("FAQ has ten concise answers and opening a question closes the others", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
+  const markup = source.slice(source.indexOf('  faqCard.innerHTML = `'), source.indexOf("  app?.append(faqCard);"));
+  assert.equal((markup.match(/class="faq-question"/g) || []).length, 10);
+  assert.equal((markup.match(/<p>/g) || []).length, 10);
+  assert.ok(markup.includes("Download save file"));
+  const questions = Array.from({ length: 10 }, () => ({
+    open: false,
+    addEventListener(event, listener) {
+      assert.equal(event, "toggle");
+      this.toggle = listener;
+    },
+  }));
+  const wiring = source.slice(source.indexOf("  const faqQuestions ="), source.indexOf("  const faqDetails ="));
+  vm.runInNewContext(wiring, {
+    faqCard: { querySelectorAll: () => questions },
+  });
+  questions[0].open = true;
+  questions[0].toggle();
+  questions[9].open = true;
+  questions[9].toggle();
+  assert.deepEqual(questions.map(({ open }) => open), Array(9).fill(false).concat(true));
+  questions[0].toggle();
+  assert.equal(questions[9].open, true);
+});
+
+test("collapsing FAQ resets all questions before the section reopens", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
+  const questions = [{ open: true }, { open: false }];
+  const details = {
+    open: false, isConnected: true,
+    querySelector: () => ({}),
+    addEventListener: (event, listener) => { details.toggle = listener; },
+  };
+  const state = { app: { isFaqOpen: true } };
+  vm.runInNewContext(source.slice(source.indexOf("  const faqDetails ="), source.indexOf("  const categoryMeta =")), {
+    faqCard: { querySelector: () => details }, faqQuestions: questions,
+    state, platform: { isMobile: false }, saveState: () => {}, window: {},
+  });
+  details.open = false;
+  details.toggle();
+  assert.ok(questions.every((question) => !question.open));
+  details.open = true;
+  details.toggle();
+  assert.ok(questions.every((question) => !question.open));
+  assert.equal(state.app.isFaqOpen, true);
+});
+
+test("browser and Android display the My Budget brand", () => {
+  assert.match(fs.readFileSync(path.join(__dirname, "../index.html"), "utf8"), /<title>My Budget<\/title>/);
+  assert.match(fs.readFileSync(path.join(__dirname, "../android/app/src/main/res/values/strings.xml"), "utf8"), /name="app_name">My Budget<\/string>/);
+});
+
 test("desktop footer shows the shared version above copyright while mobile omits it", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
   const footerCode = source.slice(source.indexOf('  const footer = document.createElement("footer");'), source.indexOf("  if (categoryToFocus)", source.indexOf("function render(")));
@@ -14,9 +67,9 @@ test("desktop footer shows the shared version above copyright while mobile omits
       document: { createElement: () => ({}) },
       app: { append: (element) => { footer = element; } },
     });
-    assert.equal(footer.innerHTML.includes("My Budget Planner v1.9.0"), !isMobile);
+    assert.equal(footer.innerHTML.includes("My Budget v1.9.0"), !isMobile);
     assert.ok(footer.innerHTML.endsWith(`Michael Yeh <span aria-hidden="true">&copy;</span> ${new Date().getFullYear()}`));
-    if (!isMobile) assert.ok(footer.innerHTML.indexOf("My Budget Planner") < footer.innerHTML.indexOf("Michael Yeh"));
+    if (!isMobile) assert.ok(footer.innerHTML.indexOf("My Budget") < footer.innerHTML.indexOf("Michael Yeh"));
   }
 });
 
@@ -59,42 +112,6 @@ test("shared action menus preserve budget labels, modal ownership and action cal
     modal.menu.children[0].onclick();
     assert.deepEqual(calls, [labels[0]]);
   }
-});
-
-test("backup help supports hover, pinned clicks, keyboard focus and dismissal", () => {
-  const source = fs.readFileSync(path.join(__dirname, "../src/mobile.js"), "utf8");
-  const wrapper = {};
-  const tooltip = { hidden: true };
-  const button = {
-    parentElement: wrapper, attributes: {},
-    setAttribute(name, value) { this.attributes[name] = value; },
-    matches: () => true,
-  };
-  const document = {
-    activeElement: null,
-    querySelector: (selector) => selector === "[data-backup-help]" ? button : tooltip,
-  };
-  const context = { document, closeBackupHelp: null };
-  vm.runInNewContext(source.slice(source.indexOf("  function setupBackupHelp()"), source.indexOf("  function enhance()")) + "setupBackupHelp();", context);
-  assert.equal(tooltip.hidden, true);
-  wrapper.onmouseenter();
-  assert.equal(tooltip.hidden, false);
-  wrapper.onmouseleave();
-  assert.equal(tooltip.hidden, true);
-  button.onclick();
-  wrapper.onmouseleave();
-  assert.equal(tooltip.hidden, false, "click keeps help open after hover ends");
-  assert.equal(button.attributes["aria-expanded"], "true");
-  button.onclick();
-  assert.equal(tooltip.hidden, true);
-  button.onfocus();
-  assert.equal(tooltip.hidden, false);
-  assert.equal(context.closeBackupHelp(), true);
-  assert.equal(context.closeBackupHelp(), false);
-  assert.equal(button.attributes["aria-expanded"], "false");
-  button.onclick();
-  button.onblur();
-  assert.equal(tooltip.hidden, true);
 });
 
 function setup(android, language = "en-US", device = {}) {
@@ -247,7 +264,7 @@ test("Android backup dialogs cancel before pickers or allow confirmed operations
       ? platform.importFile() : platform.exportFile("budget backup");
     assert.equal(await run(), null);
     assert.equal(messages.length, 0);
-    assert.match(prompts[0], operation === "import" ? /replace the active budget/ : /backup of the active budget/);
+    assert.match(prompts[0], operation === "import" ? /replace the active budget/ : /backup of the selected budget/);
     if (operation === "export") assert.match(prompts[0], /budgets autosave on this device/);
     context.window.confirm = () => true;
     const confirmed = run();
@@ -256,6 +273,19 @@ test("Android backup dialogs cancel before pickers or allow confirmed operations
     platform.receive({ id: messages[0].id, operation, value: null });
     assert.equal(await confirmed, null);
   }
+});
+
+test("Android new-budget imports explain creation and retain their request context", async () => {
+  const { platform, context, messages } = setup(true);
+  let prompt;
+  context.window.confirm = (message) => { prompt = message; return true; };
+  const request = 'new-budget:{"id":"new-one","name":"Restored"}';
+  const result = platform.importFile(request);
+  assert.match(prompt, /create a new budget/);
+  assert.equal(prompt.includes("replace"), false);
+  assert.equal(messages[0].budgetId, request);
+  platform.receive({ id: messages[0].id, operation: "import", value: null });
+  assert.equal(await result, null);
 });
 
 test("canceled native file selection resolves without a payload", async () => {

@@ -616,12 +616,12 @@ function moveCategory(state, sourceId, targetId, placement) {
   return true;
 }
 
-function downloadSaveFile(state) {
+function downloadSaveFile(state, budgetId = activeBudget()?.id) {
   if (platform.isAndroid) {
     platform
       .exportFile(
         JSON.stringify(budget.createSavePayload(state), null, 2),
-        activeBudget()?.id,
+        budgetId,
       )
       .catch((error) => window.alert(error.message));
     return;
@@ -759,6 +759,17 @@ async function importBudget(
   }
 }
 
+async function importNewBudget(value, request) {
+  if (value == null) return false;
+  if (!request || typeof request.id !== "string" || typeof request.name !== "string")
+    throw new Error("Invalid budget import request.");
+  if (budgetCollection.budgets.some((entry) => entry.id === request.id)) return false;
+  const data = budget.createSavePayload(budget.normalizeSaveState(JSON.parse(value)));
+  return changeBudgetLibrary((next) =>
+    window.budgetLibrary.add(next, request.name, data, request.id),
+  );
+}
+
 function render(state) {
   const scrollPosition = window.scrollY;
   const mobile = platform.isMobile || window.innerWidth <= 720;
@@ -780,7 +791,7 @@ function render(state) {
   wireEvents(state);
   const footer = document.createElement("footer");
   footer.className = "app-footer";
-  footer.innerHTML = `${platform.isMobile ? "" : `<div class="app-footer-version">My Budget Planner v${budget.APP_VERSION}</div>`}Michael Yeh <span aria-hidden="true">&copy;</span> ${new Date().getFullYear()}`;
+  footer.innerHTML = `${platform.isMobile ? "" : `<div class="app-footer-version">My Budget v${budget.APP_VERSION}</div>`}Michael Yeh <span aria-hidden="true">&copy;</span> ${new Date().getFullYear()}`;
   app.append(footer);
   if (categoryToFocus) {
     document
@@ -957,40 +968,59 @@ function wireEvents(state) {
     <details>
       <summary class="section-heading"><h2>FAQs Section</h2><span class="link-button hint">click to expand</span></summary>
       <div class="faq-content">
-        <details class="faq-question">
-          <summary>How does MyBudgeter calculate my budget?</summary>
-          <p>Enter each income source, expense, and savings contribution with its amount and frequency. MyBudgeter converts every recurring value to a monthly average so amounts with different schedules can be compared fairly. Category targets are calculated from your monthly net income and each category's budget percentage. The Budget Board shows actual spending or savings against that target, while Complete Summary shows the same plan across weekly, biweekly, monthly, quarterly, and annual views.</p>
-          <p>Uncategorized is the portion of normalized income not yet assigned to expenses or savings. Total Unspent includes both your savings contributions and Uncategorized money. These figures are planning estimates based only on what you enter; they do not connect to or reconcile with a bank account.</p>
+        <details class="faq-question" name="budget-faq">
+          <summary>How do I create a budget?</summary>
+          <p>Open the budget menu, then choose Create or Import Budget. Name your budget and pick a template; 50/30/20 is selected by default.</p>
         </details>
-        <details class="faq-question">
-          <summary>What do the frequency options mean?</summary>
-          <p>Frequency describes how often an entered amount occurs. Daily uses an average of 30.4375 days per month. Weekly uses 4.34524 weeks per month. Biweekly means once every two weeks, or about 2.17262 payments per month. Semi-monthly means exactly two payments each month, such as the 1st and 15th. Monthly is once per month, quarterly is once every three months, and annually is once per year.</p>
-          <p>Choose Semi-monthly when a payment happens twice in every calendar month; choose Biweekly when it happens every 14 days. Those schedules are not the same over a full year. The app uses the selected frequency for income, expenses, and savings. If you use Quantity for an item, the item amount is multiplied by that quantity before the frequency is converted to a monthly amount.</p>
+        <details class="faq-question" name="budget-faq">
+          <summary>How do I switch or manage budgets?</summary>
+          <p>Open the menu beside the budget name to switch budgets. Each budget's own menu lets you rename, duplicate, delete, or download it.</p>
         </details>
-        <details class="faq-question">
-          <summary>What can I do in the app?</summary>
-          <p>You can add and edit multiple income sources, including optional notes. Create expense and savings categories with a budget percentage, then add recurring items to each category. A category named Savings is automatically marked as a savings category unless you manually change that setting. You can track decimal quantities for prorated recurring costs, such as half of a biennial cost entered annually.</p>
-          <p>You can organize items into groups and nested subgroups, rename or delete a whole group, and drag categories, groups, and items to manually reorder or move them between categories. The app also includes a Notes area, collapsed Net Income and Budget Board sections, category targets and usage, and a Complete Summary across several time periods.</p>
+        <details class="faq-question" name="budget-faq">
+          <summary>Does my budget save automatically?</summary>
+          <p>Yes. Changes and unfinished forms autosave ${platform.isAndroid ? "on this device" : "in this browser"}. No account is needed, and budgets do not sync between devices.</p>
         </details>
-        <details class="faq-question">
-          <summary>How do saving, downloading, and importing work?</summary>
-          <p>Your budgets automatically save in this browser's local storage shortly after changes are made. Use the menu beside the budget name to create, switch, rename, duplicate, or delete budgets. Each budget keeps its own data, preferences, and unfinished forms across reloads. Use Download Save File to back up only the active budget, including its income, categories, items, notes, organization, colors, and relevant preferences. Budget names and unfinished forms are local and are not included in backups. Keep downloaded files somewhere you control if the information is important to you.</p>
-          <p>Use Import Save File to restore a downloaded MyBudgeter JSON file or move a budget to another browser or device. Importing replaces only the active budget after confirmation and keeps its local name. Other budgets are unchanged. Create a budget first if you want to import into a separate budget, or download a backup before replacing an existing one. Save files record the app version and remain compatible within the same major version.</p>
+        <details class="faq-question" name="budget-faq">
+          <summary>How do I back up a budget?</summary>
+          <p>Choose Download save file in that budget's menu. Each file contains one budget; its local name and unfinished forms are not included.</p>
         </details>
-        <details class="faq-question">
-          <summary>Where is my data stored and who can see it?</summary>
-          <p>MyBudgeter is a client-side app with no server dependency. Your active budget is stored in the local storage for the browser and browser profile you use. It is not automatically uploaded to a MyBudgeter account because the app does not provide one.</p>
-          <p>Clearing browser site data, using a different browser profile, or losing access to a device can remove that local copy. Download save files regularly to protect against that. Anyone with access to your browser profile or a downloaded save file may be able to view its contents, so treat backups as private financial information.</p>
+        <details class="faq-question" name="budget-faq">
+          <summary>How do I import a save file?</summary>
+          <p>Choose Create or Import Budget, then Import a File. Give it a name and select your backup; it becomes a new budget and leaves existing budgets unchanged.</p>
         </details>
-        <details class="faq-question">
-          <summary>What can the app not do?</summary>
-          <p>MyBudgeter does not connect to banks, credit cards, payroll systems, or other financial institutions. It cannot import transactions automatically, categorize purchases for you, send bill reminders, make payments, or reconcile planned amounts with an account balance. There is no cloud sync, account sign-in, shared household budget, or real-time collaboration.</p>
-          <p>The app is a budgeting planner, not tax, legal, investment, or financial advice. It does not guarantee that a plan is affordable or that an entered schedule, tax withholding, debt balance, interest calculation, or exchange rate is correct. Review your entries and consult an appropriate professional when you need advice for a financial decision.</p>
+        <details class="faq-question" name="budget-faq">
+          <summary>Can I change the template categories?</summary>
+          <p>Yes. Templates only add starting categories and percentages. You can edit them, add your own, and mark categories as savings.</p>
+        </details>
+        <details class="faq-question" name="budget-faq">
+          <summary>How do I add or edit income and expenses?</summary>
+          <p>Use Add Income or a category's + button to add entries. Open an entry's menu to edit or remove it; Quantity multiplies its amount.</p>
+        </details>
+        <details class="faq-question" name="budget-faq">
+          <summary>How are totals and budget targets calculated?</summary>
+          <p>Recurring amounts are converted to a monthly average, then shown for your chosen period. Category targets use your income and percentages; biweekly means every two weeks, while semi-monthly means twice a month.</p>
+        </details>
+        <details class="faq-question" name="budget-faq">
+          <summary>Can I group or rearrange items?</summary>
+          <p>Yes. Create groups and subgroups to organize items. ${platform.isMobile ? "Hold a name or category header, then drag; use Move to transfer items or groups." : "Drag categories, groups, and items to reorder them or move items between categories."}</p>
+        </details>
+        <details class="faq-question" name="budget-faq">
+          <summary>Will my data survive a new device or cleared storage?</summary>
+          <p>Download a backup first, then import it on the new device. Clearing ${platform.isAndroid ? "app data or uninstalling" : "browser site data"} removes local budgets; there is no cloud backup or bank connection.</p>
         </details>
       </div>
     </details>
   `;
   app?.append(faqCard);
+  const faqQuestions = faqCard.querySelectorAll(".faq-question");
+  faqQuestions.forEach((question) => {
+    question.addEventListener("toggle", () => {
+      if (!question.open) return;
+      faqQuestions.forEach((other) => {
+        if (other !== question) other.open = false;
+      });
+    });
+  });
   const faqDetails = faqCard.querySelector(":scope > details");
   faqDetails.open = state.app.isFaqOpen === true;
   const updateFaq = () => {
@@ -1003,6 +1033,11 @@ function wireEvents(state) {
   faqDetails.addEventListener("toggle", () => {
     if (!faqDetails.isConnected) return;
     updateFaq();
+    if (!faqDetails.open) {
+      faqQuestions.forEach((question) => {
+        question.open = false;
+      });
+    }
     if (state.app.isFaqOpen === faqDetails.open) return;
     state.app.isFaqOpen = faqDetails.open;
     saveState(state);
@@ -1437,20 +1472,7 @@ function wireEvents(state) {
       render(state);
     }),
   );
-  const importTargetBudgetId = activeBudget()?.id;
-  document
-    .querySelector("[data-import-save]")
-    ?.addEventListener("change", async (event) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      try {
-        await importBudget(await file.text(), importTargetBudgetId);
-      } catch (error) {
-        window.alert(`Could not read the save file: ${error.message}`);
-      } finally {
-        event.target.value = "";
-      }
-    });
+
 }
 
 app?.addEventListener("click", (event) => {
@@ -1620,8 +1642,6 @@ app?.addEventListener("click", (event) => {
     input.focus();
     return;
   }
-  if (button.matches("[data-download-save]"))
-    return downloadSaveFile(currentState);
   if (button.matches("[data-toggle-income]")) {
     currentState.app.isIncomeOpen = currentState.app.isIncomeOpen === false;
     button.closest("section").querySelector(".collapsible-body").hidden =
@@ -2642,8 +2662,11 @@ app?.addEventListener("drop", (event) => {
 window.addEventListener("budget-document-result", (event) => {
   const result = event.detail;
   if (result.error) window.alert(result.error);
-  else if (result.operation === "import")
-    importBudget(result.value, result.budgetId);
+  else if (result.operation === "import") {
+    if (result.budgetId?.startsWith("new-budget:")) {
+      window.budgetLibraryUI.restoreImport(result);
+    } else importBudget(result.value, result.budgetId);
+  }
 });
 
 document.addEventListener("visibilitychange", () => {

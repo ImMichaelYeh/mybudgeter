@@ -1,6 +1,6 @@
-# MyBudgeter
+# My Budget
 
-MyBudgeter is a local budgeting board for browsers and Android. Add income sources, assign monthly budget targets to categories, and track recurring expenses or savings items at different frequencies. The board converts entries to monthly amounts so you can compare actual spending, savings, and unspent income against your budget.
+My Budget is a local budgeting board for browsers and Android. Add income sources, assign monthly budget targets to categories, and track recurring expenses or savings items at different frequencies. The board converts entries to monthly amounts so you can compare actual spending, savings, and unspent income against your budget.
 
 Key features include:
 
@@ -11,11 +11,15 @@ Key features include:
 - Grouped items, recurring cost quantities, and a personal notes area.
 - Automatic local browser saving, plus download and import of save files for backup.
 
-Open `index.html` in a modern browser to use the app. Budgets are stored locally in that browser. Use the menu beside the budget name to manage them. Download a separate save file for each budget regularly; export and import affect only the active budget. New budgets default to the 50/30/20 strategy.
+Open `index.html` in a modern browser to use the app. Budgets are stored locally in that browser. Use the menu beside the budget name to manage them. Choose Download in each budget’s menu to back it up. Choose Create or Import Budget, then Import a File, to add a backup as a new budget without replacing existing budgets. New budgets default to the 50/30/20 strategy.
 
 ## Versioning
 
-The app follows semantic versioning. Increase the major version only when old save files can no longer be imported, the minor version for backwards-compatible features, and the patch version for fixes or non-visible changes. Keep browser and Android versions matched through `APP_VERSION` in `src/budget.js`; Android reads it at build time. Hold the current version during iteration until the preceding version is committed to GitHub or an explicit bump is requested. Exported save files record that same version. Git is configured to use `.githooks/pre-commit`, which blocks commits that do not update it; clone users can enable it with `git config core.hooksPath .githooks`.
+The app follows semantic versioning. Increase the major version only when old save files can no longer be imported, the minor version for backwards-compatible features, and the patch version for fixes or non-visible changes. Keep browser and Android versions matched through `APP_VERSION` in `src/budget.js`; Android reads it at build time. Exported save files record that same version.
+
+Feature branches can have any number of commits and pushes without a version bump. Bump once when preparing changes for `main`, or when explicitly requested. The `.githooks/pre-push` hook requires the commit being pushed to `refs/heads/main` to have a higher version than the remote's current `main`; it also covers pushes such as `feature:main`. Initial creation of `main` has no prior version to compare. There is no per-commit version check. Enable the hooks in a clone with `git config core.hooksPath .githooks` (Node.js is required). Local hooks do not run for merges made through GitHub's website, so include the release bump in the PR before merging there.
+
+On macOS/Linux, also make the hook executable with `chmod +x .githooks/pre-push`.
 
 ## Testing
 
@@ -23,7 +27,7 @@ Run `node --test` to execute the budgeting logic tests.
 
 ## Android app
 
-The Android project lives in `android/` and packages the same HTML, CSS, and JavaScript as the website. No separate Android repository or duplicated budget engine is required. My Budget Planner works offline on Android 8.0+ with Android System WebView/Chrome version 100+.
+The Android project lives in `android/` and packages the same HTML, CSS, and JavaScript as the website. No separate Android repository or duplicated budget engine is required. My Budget works offline on Android 8.0+ with Android System WebView/Chrome version 100+.
 
 The app keeps the same budgeting features on one vertically scrolling page. Hold a category header, item name, or group name, then drag to organize it. Drop near an edge to insert before/after, or in the center to swap categories or group entries. Hold near a screen edge to scroll while dragging. The hamburger menu provides Edit/Remove and, on Android, Move. Move transfers items/groups between groups or categories; focused names also support Alt+Up/Down keyboard ordering. Budgets save privately on the device; **Export Save File** and **Import Save File** use Android's document picker. Browser and app budgets are separate: transfer a budget with a JSON backup. Clearing app data or uninstalling removes the local budget. Automatic cloud/device-transfer backup is disabled, so keep exported backups. Imports are limited to 16 MiB.
 

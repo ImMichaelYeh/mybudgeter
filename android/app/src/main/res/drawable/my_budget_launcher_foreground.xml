@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The source mark sits slightly high; these insets center it and reduce its size. -->
+    <item
+        android:drawable="@drawable/my_budget_foreground"
+        android:left="3dp"
+        android:top="4dp"
+        android:right="3dp"
+        android:bottom="2dp" />
+</layer-list>

@@ -9,40 +9,7 @@
   let sessionLoad;
   let sessionQueue = Promise.resolve();
   let checkpointWrite = Promise.resolve();
-  let closeBackupHelp;
-
-  function setupBackupHelp() {
-    const button = document.querySelector("[data-backup-help]");
-    const tooltip = document.querySelector("#backup-help-tooltip");
-    closeBackupHelp = null;
-    if (!button || !tooltip) return;
-    let pinned = false;
-    const show = (open) => {
-      tooltip.hidden = !open;
-      button.setAttribute("aria-expanded", String(open));
-    };
-    closeBackupHelp = () => {
-      const wasOpen = !tooltip.hidden;
-      pinned = false;
-      show(false);
-      return wasOpen;
-    };
-    button.parentElement.onmouseenter = () => show(true);
-    button.parentElement.onmouseleave = () => {
-      if (!pinned && document.activeElement !== button) show(false);
-    };
-    button.onfocus = () => {
-      if (button.matches(":focus-visible")) show(true);
-    };
-    button.onblur = closeBackupHelp;
-    button.onclick = () => {
-      pinned = !pinned;
-      show(pinned);
-    };
-  }
-
   function enhance() {
-    setupBackupHelp();
     document.querySelectorAll('input[type="number"]').forEach((input) => {
       input.inputMode = "decimal";
     });
@@ -87,7 +54,7 @@
       metrics.before(stats);
       stats.append(metrics, progress, label);
     });
-    document.title = "My Budget Planner";
+    document.title = "My Budget";
     document
       .querySelectorAll(
         ".column-header h3, .item-group-header h4, .expense-item strong",
@@ -135,62 +102,12 @@
       move.onclick = () => openMove(source);
       actions.prepend(move);
     });
-    const file = document.querySelector("[data-import-save]");
-    if (file && android) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "secondary";
-      button.innerHTML =
-        file.closest("label").querySelector(".backup-icon").outerHTML +
-        '<span class="backup-label">Import Save File</span>';
-      button.setAttribute("aria-label", "Import Save File");
-      button.title = "Import Save File";
-      button.onclick = async () => {
-        try {
-          const budgetId = budgetCollection.activeBudgetId;
-          await importBudget(await platform.importFile(budgetId), budgetId);
-        } catch (error) {
-          window.alert(error.message);
-        }
-      };
-      file.closest("label").replaceWith(button);
-    }
     const footer = document.querySelector(".app-footer");
     if (footer)
       footer.textContent =
         "Having issues? Contact my.development.life@gmail.com";
-    const exportButton = document.querySelector("[data-download-save]");
-    if (exportButton) {
-      exportButton.querySelector(".backup-label").textContent =
-        "Export Save File";
-      exportButton.setAttribute("aria-label", "Export Save File");
-      exportButton.title = "Export Save File";
-    }
     document.querySelectorAll(".link-button.hint").forEach((button) => {
       button.textContent = button.textContent.replace(/click/gi, "Tap");
-    });
-    document.querySelectorAll(".faq-question").forEach((question) => {
-      const title = question.querySelector("summary")?.textContent;
-      if (android && title?.includes("saving, downloading")) {
-        question.querySelector("summary").textContent =
-          "How does saving, exporting, And importing Work?";
-        question.querySelectorAll("p")[0].textContent =
-          "Your budgets save automatically in this app's private storage on this device. Use the menu beside the budget name to create, switch, rename, duplicate, or delete budgets. Each budget keeps its own preferences and unfinished forms across relaunches. Export Save File backs up only the active budget, without its local name or unfinished forms. Import Save File replaces only the active budget after confirmation, keeps its local name, and leaves other budgets unchanged. Create a budget first to import separately. Browser and app budgets do not sync; transfer one budget at a time using export and import.";
-      }
-      if (android && title?.includes("stored and who")) {
-        const paragraphs = question.querySelectorAll("p");
-        paragraphs[0].textContent =
-          "Your working budget is stored privately on this device. My Budget Planner has no server, account, or automatic cloud backup.";
-        paragraphs[1].textContent =
-          "Clearing app data or uninstalling removes the local budget. Export backups regularly. Anyone with access to your unlocked device or exported JSON can view the budget; treat backups as private financial information.";
-      }
-      if (title?.includes("What can I do")) {
-        const paragraph = question.querySelectorAll("p")[1];
-        paragraph.textContent = paragraph.textContent.replace(
-          "drag categories, groups, and items",
-          "hold a category header, item name, or group name, then drag to organize it; use Move to transfer items or groups",
-        );
-      }
     });
     addActionMenus();
   }
@@ -270,7 +187,6 @@
   }
 
   document.addEventListener("click", (event) => {
-    if (!event.target.closest(".backup-help")) closeBackupHelp?.();
     if (
       actionMenu &&
       !actionMenu.contains(event.target) &&
@@ -279,11 +195,6 @@
       closeActionMenu();
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && closeBackupHelp?.()) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      return;
-    }
     if (!actionMenu) return;
     if (event.key === "Escape") {
       event.preventDefault();
@@ -305,11 +216,9 @@
   });
   window.addEventListener("scroll", () => {
     closeActionMenu();
-    closeBackupHelp?.();
   }, { passive: true });
   window.addEventListener("resize", () => {
     closeActionMenu();
-    closeBackupHelp?.();
   });
 
   let gesture;
@@ -961,7 +870,6 @@
 
   function handleBack() {
     if (budgetTransition) return true;
-    if (closeBackupHelp?.()) return true;
     if (actionMenu) {
       closeActionMenu(true);
       return true;
@@ -972,6 +880,7 @@
     }
     const dialog = document.querySelector("dialog[open]");
     if (dialog) {
+      if (dialog.dataset?.submitting === "true") return true;
       dialog.close();
       return true;
     }

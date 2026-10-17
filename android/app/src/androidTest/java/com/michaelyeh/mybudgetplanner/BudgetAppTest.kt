@@ -19,6 +19,103 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class BudgetAppTest {
+    @Test fun faqQuestionsOpenOneAtATime() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            waitFor(scenario, "window.budgetReady === true && Boolean(activeBudget())")
+            assertEquals(10, evaluate(scenario, "document.querySelectorAll('.faq-question').length"))
+            evaluate(scenario, "document.querySelector('.faq-card > details').open=true; document.querySelectorAll('.faq-question')[0].querySelector('summary').click();")
+            waitFor(scenario, "document.querySelectorAll('.faq-question')[0].open")
+            evaluate(scenario, "document.querySelectorAll('.faq-question')[1].querySelector('summary').click();")
+            waitFor(scenario, "document.querySelectorAll('.faq-question')[1].open && document.querySelectorAll('.faq-question[open]').length === 1")
+            evaluate(scenario, "document.querySelector('.faq-card').scrollIntoView({block:'start'});")
+            captureBudgetUi("budget-faq-portrait")
+            evaluate(scenario, "document.querySelector('.faq-card > details').open=false;")
+            waitFor(scenario, "document.querySelectorAll('.faq-question[open]').length === 0")
+            evaluate(scenario, "document.querySelector('.faq-card > details').open=true;")
+            assertEquals(0, evaluate(scenario, "document.querySelectorAll('.faq-question[open]').length"))
+        }
+    }
+
+    @Test fun newBudgetImportHandlesNativeCancellationErrorsAndRecreatedPickerResults() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            waitFor(scenario, "window.budgetReady === true && Boolean(activeBudget())")
+            evaluate(scenario, """
+                window.originalBudgets = JSON.stringify(budgetCollection.budgets);
+                platform.importFile = () => new Promise(resolve => window.finishCanceledPicker=resolve);
+                budgetLibraryUI.create();
+                document.querySelector('[name=strategy][value=import]').click();
+                document.querySelector('.budget-dialog form').requestSubmit();
+            """.trimIndent())
+            assertEquals(true, evaluate(scenario, "budgetMobile.handleBack() && Boolean(document.querySelector('.budget-dialog[open]'))"))
+            evaluate(scenario, "finishCanceledPicker(null);")
+            waitFor(scenario, "!document.querySelector('.budget-dialog button[type=submit]').disabled")
+            assertEquals(true, evaluate(scenario, "JSON.stringify(budgetCollection.budgets) === originalBudgets"))
+            evaluate(scenario, "platform.importFile=async () => 'invalid'; document.querySelector('.budget-dialog form').requestSubmit();")
+            waitFor(scenario, "Boolean(document.querySelector('.budget-dialog-error').textContent)")
+            assertEquals(true, evaluate(scenario, "JSON.stringify(budgetCollection.budgets) === originalBudgets"))
+            evaluate(scenario, """
+                platform.importFile=async request => {
+                  window.pickerContext = request;
+                  const imported = budget.createEmptyState(); imported.notes='Imported native notes';
+                  return JSON.stringify(budget.createSavePayload(imported));
+                };
+                document.querySelector('[name=budgetName]').value='Imported Native';
+                document.querySelector('.budget-dialog form').requestSubmit();
+            """.trimIndent())
+            waitFor(scenario, "activeBudget().name === 'Imported Native' && !budgetTransition && !document.querySelector('.budget-dialog')")
+            assertEquals(true, evaluate(scenario, "currentState.notes === 'Imported native notes' && budgetCollection.budgets.length === 2 && pickerContext.startsWith('new-budget:') && JSON.stringify(budgetCollection.budgets.slice(0,1)) === originalBudgets"))
+            scenario.recreate()
+            waitFor(scenario, "window.budgetReady === true && activeBudget().name === 'Imported Native'")
+            evaluate(scenario, """
+                window.recoveredResult = {operation:'import',budgetId:'new-budget:'+JSON.stringify({id:'restored-picker',name:'Recovered Import'}),value:JSON.stringify(budget.createSavePayload(currentState))};
+                window.dispatchEvent(new CustomEvent('budget-document-result',{detail:recoveredResult}));
+            """.trimIndent())
+            waitFor(scenario, "activeBudget().name === 'Recovered Import' && !budgetTransition")
+            evaluate(scenario, "window.dispatchEvent(new CustomEvent('budget-document-result',{detail:recoveredResult}));")
+            assertEquals(3, evaluate(scenario, "budgetCollection.budgets.length"))
+        }
+    }
+
+    @Test fun browserCreationImportsFileAndDownloadsInactiveBudget() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            waitFor(scenario, "window.budgetReady === true")
+            scenario.onActivity { activity ->
+                findWeb(activity.window.decorView)!!.loadUrl("${MainActivity.ORIGIN}/assets/index.html")
+            }
+            waitFor(scenario, "window.budgetReady === true && !budgetPlatform.isAndroid")
+            dismissFirstBudgetSetup(scenario)
+            evaluate(scenario, """
+                window.originalId=activeBudget().id;
+                window.originalBudgets=JSON.stringify(budgetCollection.budgets);
+                window.importedName=budgetLibrary.suggestName(budgetCollection,'Imported Browser');
+                document.querySelector('[data-budget-menu]').click();
+                [...document.querySelectorAll('.budget-dropdown > button')].find(button=>button.textContent==='Create or Import Budget').click();
+                document.querySelector('[name=budgetName]').value=importedName;
+                document.querySelector('[name=strategy][value=import]').click();
+                const imported=budget.createEmptyState(); imported.notes='Imported browser notes';
+                const transfer=new DataTransfer();
+                transfer.items.add(new File([JSON.stringify(budget.createSavePayload(imported))],'budget.json',{type:'application/json'}));
+                document.querySelector('[name=budgetBackup]').files=transfer.files;
+            """.trimIndent())
+            assertEquals(true, evaluate(scenario, "getComputedStyle(document.querySelector('[name=budgetBackup]'),'::file-selector-button').backgroundColor === getComputedStyle(document.documentElement).getPropertyValue('--gold').trim().replace('#ffcd00','rgb(255, 205, 0)')"))
+            captureBudgetUi("budget-import-file-portrait")
+            evaluate(scenario, "document.querySelector('.budget-dialog form').requestSubmit();")
+            waitFor(scenario, "activeBudget().name === importedName && !budgetTransition && !document.querySelector('.budget-dialog')")
+            assertEquals(true, evaluate(scenario, "currentState.notes === 'Imported browser notes' && JSON.stringify(budgetCollection.budgets.slice(0,-1)) === originalBudgets"))
+            evaluate(scenario, """
+                window.currentId=activeBudget().id;
+                downloadSaveFile=(state,budgetId) => {window.downloaded={state,budgetId};};
+                document.querySelector('[data-budget-menu]').click();
+                const target=budgetCollection.budgets.find(entry=>entry.id===originalId);
+                const row=[...document.querySelectorAll('.budget-list-entry')].find(row=>row.querySelector('.budget-open').textContent===target.name);
+                row.querySelector('.entry-menu-toggle').click();
+                [...document.querySelectorAll('.entry-action-menu button')].find(button=>button.textContent==='Download save file').click();
+            """.trimIndent())
+            waitFor(scenario, "Boolean(window.downloaded)")
+            assertEquals(true, evaluate(scenario, "downloaded.budgetId === originalId && activeBudget().id === currentId && budget.createSavePayload(downloaded.state).schema === budget.SAVE_FILE_SCHEMA && !document.querySelector('.app-header .actions')"))
+        }
+    }
+
     @Test fun autosavePersistsSilentlyAwayFromHeader() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             waitFor(scenario, "window.budgetReady === true && Boolean(activeBudget())")
@@ -181,7 +278,7 @@ class BudgetAppTest {
             assertEquals(false, evaluate(scenario, "Boolean(activeBudget())"))
             assertEquals(true, evaluate(scenario, "document.querySelector('[data-budget-menu]').parentElement.matches('.app-header > .budget-heading') && !document.querySelector('[data-budget-menu]').hidden"))
             assertEquals("50/30/20", evaluate(scenario, "document.querySelector('[name=strategy]:checked').value"))
-            assertEquals(4, evaluate(scenario, "document.querySelectorAll('[name=strategy]').length"))
+            assertEquals(5, evaluate(scenario, "document.querySelectorAll('[name=strategy]').length"))
             captureBudgetUi("budget-setup-portrait")
             evaluate(scenario, "window.budgetMobile.handleBack();")
             waitFor(scenario, "Boolean(activeBudget()) && !budgetTransition && !document.querySelector('.budget-dialog')")
@@ -209,20 +306,19 @@ class BudgetAppTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             waitFor(scenario, "window.budgetReady === true && Boolean(activeBudget())")
             assertEquals("MyBudgeter-library-v1", evaluate(scenario, "budgetCollection.schema"))
-            assertEquals(true, evaluate(scenario, "!document.querySelector('[data-backup-help], #backup-help-tooltip')"))
             assertEquals(false, evaluate(scenario, "Boolean(document.querySelector('dialog[open]'))"))
             evaluate(scenario, "window.originalBudgetId = activeBudget().id; currentState.expenses=[{id:'rent',name:'Rent',amount:100,multiplier:1,frequency:'monthly',categoryId:'default-needs',group:''}]; saveState(currentState); render(currentState); document.querySelector('[data-edit-expense=rent]').click(); const draft = document.querySelector('.expense-edit-form [name=name]'); draft.value = 'Unfinished rent'; draft.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('[data-budget-menu]').click();")
             assertEquals(true, evaluate(scenario, "document.querySelector('.budget-dropdown').open && document.activeElement.closest('.budget-dropdown') !== null && document.querySelector('.budget-dropdown').getBoundingClientRect().width <= innerWidth * 0.9 + 1"))
             assertBudgetDropdown(scenario)
             captureBudgetUi("budget-dropdown-portrait")
-            assertEntryMenu(scenario, ".budget-list-entry.is-active", "Rename,Duplicate,Delete")
+            assertEntryMenu(scenario, ".budget-list-entry.is-active", "Download save file,Rename,Duplicate,Delete")
             assertEquals(true, evaluate(scenario, "document.querySelector('.budget-dropdown').open && document.querySelector('.budget-list-entry').getBoundingClientRect().height < 80 && [...document.querySelectorAll('.budget-row-actions > button:not(.entry-menu-toggle)')].every(button => button.hidden)"))
             evaluate(scenario, "document.querySelector('.budget-list-entry.is-active .entry-menu-toggle').click();")
             assertEquals(true, evaluate(scenario, "(() => { const menu=document.querySelector('.entry-action-menu'); const bounds=menu.getBoundingClientRect(); return menu.closest('.budget-dropdown') !== null && menu.contains(document.elementFromPoint(bounds.left+bounds.width/2,bounds.top+bounds.height/2)); })()"))
             captureBudgetUi("budget-actions-portrait")
             evaluate(scenario, "budgetMobile.handleBack();")
             assertEquals(true, evaluate(scenario, "!document.querySelector('.entry-action-menu') && document.querySelector('.budget-dropdown').open"))
-            evaluate(scenario, "[...document.querySelectorAll('.budget-dropdown > button')].find(button => button.textContent === 'Create Budget').click(); document.querySelector('[name=budgetName]').value='Second'; document.querySelector('.budget-dialog form').requestSubmit();")
+            evaluate(scenario, "[...document.querySelectorAll('.budget-dropdown > button')].find(button => button.textContent === 'Create or Import Budget').click(); document.querySelector('[name=budgetName]').value='Second'; document.querySelector('.budget-dialog form').requestSubmit();")
             waitFor(scenario, "activeBudget().name === 'Second' && !budgetTransition && !document.querySelector('.budget-dialog')")
             assertEquals(false, evaluate(scenario, "Boolean(document.querySelector('.expense-edit-form'))"))
             evaluate(scenario, "document.querySelector('[data-budget-menu]').click(); [...document.querySelectorAll('.budget-open')].find(button => button.textContent === 'My Budget').click();")
@@ -263,22 +359,8 @@ class BudgetAppTest {
             }
             waitFor(scenario, "window.budgetReady === true && !budgetPlatform.isMobile")
             dismissFirstBudgetSetup(scenario)
-            assertEquals(true, evaluate(scenario, "document.querySelector('[data-budget-menu]').parentElement.matches('.app-header > .budget-heading') && !document.querySelector('.active-budget-name') && document.querySelector('[data-budget-menu]').nextElementSibling.matches('.budget-banner-name')"))
-            assertEquals(true, evaluate(scenario, """
-                (() => {
-                  const title = document.querySelector('.app-header h1').getBoundingClientRect();
-                  const controls = ['[data-budget-menu]', '[data-download-save]', '.app-header .button-like']
-                    .map(selector => document.querySelector(selector).getBoundingClientRect());
-                  const menu = document.querySelector('[data-budget-menu]').getBoundingClientRect();
-                  const help = document.querySelector('#backup-help-tooltip');
-                  return controls.every(bounds => Math.abs((bounds.top + bounds.bottom - title.top - title.bottom) / 2) <= 1)
-                    && Math.abs(title.left - menu.right - 12) <= 1 && help.hidden;
-                })()
-            """.trimIndent()))
-            evaluate(scenario, "document.querySelector('.backup-help').dispatchEvent(new MouseEvent('mouseenter')); ")
-            assertEquals(false, evaluate(scenario, "document.querySelector('#backup-help-tooltip').hidden"))
-            evaluate(scenario, "document.querySelector('[data-backup-help]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));")
-            assertEquals(true, evaluate(scenario, "document.querySelector('#backup-help-tooltip').hidden"))
+            assertEquals(true, evaluate(scenario, "document.querySelector('[data-budget-menu]').parentElement.matches('.app-header > .budget-heading') && !document.querySelector('.active-budget-name') && document.querySelector('[data-budget-menu]').previousElementSibling.matches('.budget-banner-name')"))
+            assertEquals(true, evaluate(scenario, "(() => { const title=document.querySelector('.budget-banner-name').getBoundingClientRect(); const menu=document.querySelector('[data-budget-menu]').getBoundingClientRect(); return Math.abs(menu.right-document.querySelector('.budget-heading').getBoundingClientRect().right)<=1 && menu.left >= title.right + 11 && Math.abs(menu.width-menu.height)<1 && menu.height < title.height && (()=>{const icon=document.querySelector('[data-budget-menu] svg').getBoundingClientRect(); return Math.abs(icon.left+icon.width/2-menu.left-menu.width/2)<1 && Math.abs(icon.top+icon.height/2-menu.top-menu.height/2)<1;})() && !document.querySelector('.app-header .actions, .backup-help'); })()"))
             evaluate(scenario, "currentState=budget.createEmptyState(); currentState.expenses=[{id:'browser-item',name:'Rent',amount:100,multiplier:1,frequency:'monthly',categoryId:'default-needs',group:''}]; saveState(currentState); render(currentState); document.querySelector('[data-edit-expense=browser-item]').click(); const draft=document.querySelector('.expense-edit-form [name=name]'); draft.value='Browser draft'; draft.dispatchEvent(new Event('input',{bubbles:true})); window.checkpointDone=false; budgetMobile.checkpoint(false,true).then(() => window.checkpointDone=true);")
             waitFor(scenario, "window.checkpointDone === true")
             evaluate(scenario, "window.reloadMarker=true;")
@@ -291,7 +373,7 @@ class BudgetAppTest {
             assertEquals(true, evaluate(scenario, "innerWidth >= 1000 && Math.abs(document.querySelector('.budget-dropdown').getBoundingClientRect().width - 360) <= 1 && document.documentElement.scrollWidth <= innerWidth"))
             assertBudgetDropdown(scenario)
             captureBudgetUi("budget-dropdown-desktop")
-            assertEntryMenu(scenario, ".budget-list-entry.is-active", "Rename,Duplicate,Delete")
+            assertEntryMenu(scenario, ".budget-list-entry.is-active", "Download save file,Rename,Duplicate,Delete")
             assertEquals(true, evaluate(scenario, "(() => { const bounds=document.querySelector('.budget-row-actions .entry-menu-toggle').getBoundingClientRect(); return bounds.width === 32 && bounds.height === 32; })()"))
             evaluate(scenario, "document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));")
             waitFor(scenario, "!document.querySelector('.budget-dropdown')")
@@ -492,8 +574,8 @@ class BudgetAppTest {
             evaluate(scenario, "document.querySelector('[data-toggle-income]').click();")
             assertEquals(0, evaluate(scenario, "document.querySelectorAll('[data-order-step]').length"))
             assertEquals(true, evaluate(scenario, "[...document.querySelectorAll('[data-remove-category]')].every(button => button.textContent.charCodeAt(0) === 215 && button.hasAttribute('aria-label'))"))
-            assertEquals("My Budget Planner", context.applicationInfo.loadLabel(context.packageManager).toString())
-            assertEquals("My Budget Planner", evaluate(scenario, "document.title"))
+            assertEquals("My Budget", context.applicationInfo.loadLabel(context.packageManager).toString())
+            assertEquals("My Budget", evaluate(scenario, "document.title"))
             assertEquals(true, evaluate(scenario, "document.querySelector('.app-header h1').textContent === activeBudget().name && !document.querySelector('.app-version')"))
             assertEquals(true, evaluate(scenario, "document.querySelector('.budget-banner-name').textContent === activeBudget().name && document.querySelector('.site-header').getBoundingClientRect().height >= 48"))
             assertEquals(false, evaluate(scenario, "Boolean(document.querySelector('[draggable]'))"))
@@ -519,8 +601,8 @@ class BudgetAppTest {
                 assertEquals("Horizontal overflow at $width", true, evaluate(scenario, "document.documentElement.scrollWidth <= window.innerWidth"))
                 assertEquals("No ordering bars at $width", 0, evaluate(scenario, "document.querySelectorAll('[data-order-step]').length"))
                 assertEquals("Inline category controls at $width", true, evaluate(scenario, "[...document.querySelectorAll('.column-header')].every(header => { const name = header.querySelector('h3').parentElement.getBoundingClientRect(); const actions = header.querySelector('.actions').getBoundingClientRect(); return actions.left >= name.right && actions.top < name.bottom && actions.bottom > name.top && [...header.querySelectorAll('button:not([hidden])')].every(button => button.getBoundingClientRect().width >= 48 && button.getBoundingClientRect().height >= 48); })"))
-                assertEquals("Compact Android layout at $width", true, evaluate(scenario, "(() => { const heading = document.querySelector('.section-heading'); const name = heading.querySelector('h2').getBoundingClientRect(); const toggle = heading.querySelector('.hint').getBoundingClientRect(); const title = document.querySelector('.app-header h1').getBoundingClientRect(); const backups = document.querySelector('.app-header .actions').getBoundingClientRect(); return !document.querySelector('.app-header > div:first-child > p') && toggle.top <= name.bottom && toggle.bottom >= name.top && backups.top - title.bottom <= 12 && document.querySelector('.column-metrics').getBoundingClientRect().height < 110 && document.querySelector('.category-add-row > [data-show-category-form]').getBoundingClientRect().height <= 60; })()"))
-                assertEquals("Compact backup buttons at $width", true, evaluate(scenario, "(() => { const buttons = [...document.querySelectorAll('.app-header .actions > button:not([data-budget-menu])')].map(button => button.getBoundingClientRect()); return buttons.length === 2 && [...document.querySelectorAll('.app-header .actions > button:not([data-budget-menu])')].every(button => button.querySelector('svg') && button.getAttribute('aria-label') && getComputedStyle(button.querySelector('.backup-label')).display === 'none') && !document.querySelector('.app-version') && document.querySelector('[data-budget-menu]').nextElementSibling.matches('.budget-banner-name') && buttons.every(rect => Math.abs(rect.width - rect.height) < 1) && Math.abs(buttons[0].top - buttons[1].top) < 1 && buttons.every(rect => rect.height >= 48 && rect.width < window.innerWidth / 2); })()"))
+                assertEquals("Compact Android layout at $width", true, evaluate(scenario, "(() => { const heading = document.querySelector('.section-heading'); const name = heading.querySelector('h2').getBoundingClientRect(); const toggle = heading.querySelector('.hint').getBoundingClientRect(); const title = document.querySelector('.app-header h1').getBoundingClientRect(); const backups = document.querySelector('.budget-heading').getBoundingClientRect(); return !document.querySelector('.app-header > div:first-child > p') && toggle.top <= name.bottom && toggle.bottom >= name.top && backups.top - title.bottom <= 12 && document.querySelector('.column-metrics').getBoundingClientRect().height < 110 && document.querySelector('.category-add-row > [data-show-category-form]').getBoundingClientRect().height <= 60; })()"))
+                assertEquals("Budget menu at $width: " + evaluate(scenario, "[document.querySelector('[data-budget-menu]').getBoundingClientRect().toJSON(),document.querySelector('.budget-banner-name').getBoundingClientRect().toJSON()].map(rect=>[rect.width,rect.height])"), true, evaluate(scenario, "(() => { const menu=document.querySelector('[data-budget-menu]').getBoundingClientRect(); const name=document.querySelector('.budget-banner-name').getBoundingClientRect(); return Math.abs(menu.width-menu.height)<1 && Math.abs(menu.height-parseFloat(getComputedStyle(document.querySelector('.budget-banner-name')).fontSize))<1 && !document.querySelector('.app-header .actions'); })()"))
                 assertEquals("Compact readable category metrics at $width", true, evaluate(scenario, "[...document.querySelectorAll('.category-stats')].every(stats => { const cells = [...stats.querySelector('.column-metrics').children].map(cell => cell.getBoundingClientRect()); return stats.getBoundingClientRect().height <= 75 && cells.length === 3 && cells.every(cell => Math.abs(cell.top - cells[0].top) < 1) && [...stats.querySelectorAll('.column-metrics span')].every(label => parseFloat(getComputedStyle(label).fontSize) >= 12); })"))
             }
             scenario.onActivity { activity ->
@@ -661,6 +743,16 @@ class BudgetAppTest {
             evaluate(scenario, "currentState.notes = 'Retained after failure'; saveState(currentState); flushSave();")
             waitFor(scenario, "Boolean(document.querySelector('.storage-error'))")
             assertEquals("Retained after failure", evaluate(scenario, "currentState.notes"))
+            evaluate(scenario, """
+                window.realDownload=downloadSaveFile;
+                downloadSaveFile=(state,budgetId) => {window.failedSaveBackup={state,budgetId};};
+                document.querySelector('[data-budget-menu]').click();
+                document.querySelector('.budget-list-entry.is-active .entry-menu-toggle').click();
+                [...document.querySelectorAll('.entry-action-menu button')].find(button=>button.textContent==='Download save file').click();
+            """.trimIndent())
+            waitFor(scenario, "Boolean(window.failedSaveBackup)")
+            assertEquals("Retained after failure", evaluate(scenario, "failedSaveBackup.state.notes"))
+            evaluate(scenario, "downloadSaveFile=realDownload;")
             File(file, "block-replacement").delete()
             file.delete()
             evaluate(scenario, "currentState.notes = 'Older retry'; saveState(currentState); flushSave(); currentState.notes = 'Newest retry'; saveState(currentState); window.retriesFinished = false; flushSave().then(() => window.retriesFinished = true);")
@@ -792,7 +884,7 @@ class BudgetAppTest {
                 assertTrue("Android document picker did not open", found)
                 assertTrue(automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK))
             }
-            evaluate(scenario, "window.confirm = () => true; window.pickerDone = false; platform.importFile().then(value => { window.pickerValue = value; window.pickerDone = true; });")
+            evaluate(scenario, "window.confirm = () => true; window.pickerDone = false; platform.importFile('new-budget:{\"id\":\"picker-new\",\"name\":\"New Budget\"}').then(value => { window.pickerValue = value; window.pickerDone = true; });")
             cancelPicker()
             waitFor(scenario, "window.pickerDone === true && window.pickerValue === null")
             assertEquals(original, evaluate(scenario, "JSON.stringify(currentState)"))
@@ -811,18 +903,14 @@ class BudgetAppTest {
             }
             waitFor(scenario, "window.budgetReady === true && budgetPlatform.isMobile && !budgetPlatform.isAndroid")
             dismissFirstBudgetSetup(scenario)
-            assertEquals(true, evaluate(scenario, "document.documentElement.classList.contains('mobile-app') && !document.documentElement.classList.contains('android-app') && document.querySelector('.budget-banner-name').textContent === activeBudget().name && !document.querySelector('.app-header > div:first-child > p') && Boolean(document.querySelector('input[data-import-save]'))"))
+            assertEquals(true, evaluate(scenario, "document.documentElement.classList.contains('mobile-app') && !document.documentElement.classList.contains('android-app') && document.querySelector('.budget-banner-name').textContent === activeBudget().name && !document.querySelector('.app-header > div:first-child > p') && !document.querySelector('.app-header [data-import-save]')"))
             evaluate(scenario, "currentState = budget.createEmptyState(); currentState.expenses = [{id:'phone-a',name:'First',amount:10,multiplier:1,frequency:'monthly',categoryId:'default-needs',group:'',sortOrder:1},{id:'phone-b',name:'Second',amount:20,multiplier:1,frequency:'monthly',categoryId:'default-needs',group:'',sortOrder:2}]; render(currentState);")
             assertEntryMenu(scenario, "[data-expense-id=phone-a]", "Move,Edit,Remove")
             drag(scenario, "[data-expense-id=phone-a] strong", "[data-expense-id=phone-b]", 0.5)
             assertEquals(true, evaluate(scenario, "currentState.expenses[0].group && currentState.expenses[0].group === currentState.expenses[1].group"))
             evaluate(scenario, "window.browserPhoneSaved = false; flushSave().then(() => window.browserPhoneSaved = true);")
             waitFor(scenario, "window.browserPhoneSaved === true")
-            assertEquals(true, evaluate(scenario, "Boolean(localStorage.getItem('MyBudgeter-save-v1')) && !document.querySelector('.save-help') && document.querySelector('#backup-help-tooltip').hidden"))
-            evaluate(scenario, "document.querySelector('[data-backup-help]').click();")
-            assertEquals(true, evaluate(scenario, "!document.querySelector('#backup-help-tooltip').hidden && document.querySelector('#backup-help-tooltip').textContent.includes('Importing a save file replaces only the active budget.')"))
-            evaluate(scenario, "document.querySelector('.budget-banner-name').click();")
-            assertEquals(true, evaluate(scenario, "document.querySelector('#backup-help-tooltip').hidden"))
+            assertEquals(true, evaluate(scenario, "Boolean(localStorage.getItem('MyBudgeter-save-v1')) && !document.querySelector('.app-header .actions, .backup-help')"))
             scenario.onActivity { activity ->
                 val web = findWeb(activity.window.decorView)!!
                 web.layoutParams = web.layoutParams.apply { width = (900 * activity.resources.displayMetrics.density).toInt() }

@@ -67,7 +67,8 @@ button,
   margin-bottom: 4px;
 }
 .app-header {
-  --header-control-size: 40px;
+  --budget-name-size: clamp(1.5rem, 3vw, 2rem);
+  --header-control-size: var(--budget-name-size);
   flex-wrap: wrap;
   gap: 8px 16px;
 }
@@ -76,22 +77,37 @@ button,
 }
 .budget-heading {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   flex: 1 1 0;
   gap: 12px;
   min-width: 0;
 }
-.app-header .actions > button,
-.app-header .actions > .button-like,
-.budget-menu-button {
-  height: var(--header-control-size);
-}
-.budget-menu-button {
+.app-header .budget-menu-button {
+  display: grid;
+  place-items: center;
+  position: relative;
   flex: 0 0 auto;
   width: var(--header-control-size);
+  height: var(--header-control-size);
   min-height: var(--header-control-size);
-  font-size: 1.5rem;
+  min-width: var(--header-control-size);
+  line-height: 1;
+  margin-top: calc(var(--budget-name-size) * 0.1);
   padding: 0;
+}
+.budget-menu-button svg {
+  display: block;
+  width: 60%;
+  height: 60%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.budget-menu-button::after {
+  content: "";
+  position: absolute;
+  inset: min(0px, calc((var(--header-control-size) - 48px) / 2));
 }
 .budget-dialog,
 .budget-dropdown {
@@ -129,6 +145,25 @@ button,
 }
 .budget-dialog input:not([type="radio"]) {
   width: 100%;
+}
+.budget-dialog input[type="file"] {
+  min-width: 0;
+  padding: 6px;
+}
+.budget-dialog input[type="file"]::file-selector-button {
+  min-height: 48px;
+  margin-right: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--gold-dark);
+  border-radius: 6px;
+  background: var(--gold);
+  color: var(--navy-950);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.budget-dialog input[type="file"]::file-selector-button:hover {
+  background: var(--gold-dark);
 }
 .budget-dialog fieldset {
   min-width: 0;
@@ -219,6 +254,8 @@ button,
 }
 .budget-row-actions {
   display: block;
+  align-self: start;
+  justify-self: end;
 }
 .budget-row-actions > .entry-menu-toggle {
   width: 32px;
@@ -247,7 +284,10 @@ button,
   letter-spacing: -0.03em;
   text-decoration: none;
 }
-.budget-banner-name {
+.app-header .budget-banner-name {
+  flex: 1;
+  font-size: var(--budget-name-size);
+  line-height: 1.2;
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -528,42 +568,6 @@ button.expense-add-button {
   border-radius: 6px;
   text-align: left;
 }
-.app-header .actions {
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
-  justify-content: flex-end;
-  align-items: center;
-}
-.backup-help {
-  position: relative;
-  flex: 0 0 auto;
-}
-.backup-help-button {
-  width: var(--header-control-size);
-  height: var(--header-control-size);
-  padding: 0;
-  border-radius: 50%;
-  font-size: 1.2rem;
-}
-.backup-help-tooltip {
-  position: absolute;
-  z-index: 100;
-  top: 100%;
-  right: 0;
-  width: min(360px, calc(100vw - 24px));
-  max-height: 70vh;
-  overflow: auto;
-  margin: 0;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--navy-900);
-  color: var(--ink);
-  font-size: 0.85rem;
-  line-height: 1.5;
-  text-align: left;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
-}
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -757,16 +761,6 @@ button.expense-add-button {
 .faq-card > details > .section-heading {
   flex-direction: row;
   margin-bottom: 0;
-}
-.backup-icon {
-  display: none;
-  width: 24px;
-  height: 24px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 .collapsible-body {
   padding: 0 14px 14px;
@@ -1465,7 +1459,6 @@ textarea:focus-visible,
 }
 .mobile-app .budget-banner-name {
   margin: 0;
-  font-size: 1.25rem;
 }
 .mobile-app .check {
   white-space: normal;
@@ -2097,54 +2090,13 @@ button.category-toggle {
 }
 
 .mobile-app .app-header {
-  --header-control-size: 48px;
+  --budget-name-size: 1.25rem;
   gap: 8px;
-}
-.mobile-app .app-header .actions {
-  gap: 6px;
-}
-.mobile-app .app-header .actions > button,
-.mobile-app .app-header .actions > .button-like {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  min-width: 48px;
-  padding: 10px;
-  border-radius: 8px;
-}
-.mobile-app .app-header .backup-label {
-  display: none;
-}
-.mobile-app .app-header .backup-icon {
-  display: block;
 }
 @media (max-width: 720px) {
   .app-header {
-    --header-control-size: 48px;
+    --budget-name-size: 1.25rem;
     gap: 8px;
-  }
-  .app-header .actions {
-    gap: 6px;
-  }
-  .app-header .actions > button,
-  .app-header .actions > .button-like {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 48px;
-    min-width: 48px;
-    padding: 10px;
-    border-radius: 8px;
-  }
-  .app-header .backup-label {
-    display: none;
-  }
-  .app-header .backup-icon {
-    display: block;
-  }
-  .app-header .budget-banner-name {
-    font-size: 1.25rem;
   }
 }
 

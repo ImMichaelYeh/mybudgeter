@@ -245,6 +245,69 @@ function controller() {
   };
 }
 
+test("importing a backup adds and opens an independent budget without changing existing budgets", async () => {
+  const { context, writes } = controller();
+  const original = JSON.stringify(context.budgetCollection.budgets);
+  const state = context.budget.createEmptyState();
+  state.notes = "Imported notes";
+  const payload = JSON.stringify(context.budget.createSavePayload(state));
+  assert.equal(await context.importNewBudget(payload, { id: "import-one", name: "Restored" }), true);
+  assert.equal(context.budgetCollection.activeBudgetId, "import-one");
+  assert.equal(context.currentState.notes, "Imported notes");
+  assert.equal(JSON.stringify(context.budgetCollection.budgets.slice(0, 2)), original);
+  assert.equal(writes.at(-1).budgets.length, 3);
+  const exported = context.budget.createSavePayload(context.currentState);
+  assert.equal(exported.schema, context.budget.SAVE_FILE_SCHEMA);
+  assert.equal(exported.budgets, undefined);
+  assert.equal(await context.importNewBudget(payload, { id: "import-one", name: "Restored" }), false);
+  assert.equal(context.budgetCollection.budgets.length, 3);
+});
+
+test("canceled, malformed and failed imports preserve existing budgets and allow retry", async () => {
+  const { context, failSave } = controller();
+  const original = JSON.stringify(context.budgetCollection);
+  const request = { id: "import-two", name: "Restored" };
+  const payload = JSON.stringify(context.budget.createSavePayload(context.currentState));
+  assert.equal(await context.importNewBudget(null, request), false);
+  await assert.rejects(context.importNewBudget("invalid", request));
+  await assert.rejects(context.importNewBudget('{"schema":"unknown"}', request));
+  assert.equal(JSON.stringify(context.budgetCollection), original);
+  failSave(true);
+  assert.equal(await context.importNewBudget(payload, request), false);
+  assert.equal(JSON.stringify(context.budgetCollection), original);
+  failSave(false);
+  assert.equal(await context.importNewBudget(payload, request), true);
+  assert.equal(context.budgetCollection.budgets.length, 3);
+});
+
+test("new-budget import flushes the working budget before adding the imported one", async () => {
+  const { context, writes } = controller();
+  context.currentState.notes = "Latest working notes";
+  context.saveState(context.currentState);
+  const payload = JSON.stringify(context.budget.createSavePayload(context.window.budgetLibrary.templateState()));
+  assert.equal(await context.importNewBudget(payload, { id: "import-three", name: "Third" }), true);
+  assert.equal(writes.at(-1).budgets.find((entry) => entry.id === "two").data.notes, "Latest working notes");
+  assert.equal(context.currentState.notes, "");
+});
+
+test("downloads retain the selected budget ID without opening it", () => {
+  const { context } = controller();
+  let exported;
+  context.platform.isAndroid = true;
+  context.platform.exportFile = (value, budgetId) => {
+    exported = { value: JSON.parse(value), budgetId };
+    return Promise.resolve();
+  };
+  const main = source("main.js");
+  vm.runInNewContext(main.slice(main.indexOf("function downloadSaveFile("), main.indexOf("async function loadState()")), context);
+  const target = context.budgetCollection.budgets[0];
+  context.downloadSaveFile(target.data, target.id);
+  assert.equal(exported.budgetId, "one");
+  assert.equal(context.budgetCollection.activeBudgetId, "two");
+  assert.equal(exported.value.schema, context.budget.SAVE_FILE_SCHEMA);
+  assert.equal(exported.value.budgets, undefined);
+});
+
 test("switches flush pending content to its original budget and isolate desktop history", async () => {
   const { context, writes } = controller();
   context.currentState.notes = "Second changed";

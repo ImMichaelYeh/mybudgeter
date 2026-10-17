@@ -1,0 +1,36 @@
+#!/usr/bin/env node
+
+const { execFileSync } = require("node:child_process");
+const { readFileSync } = require("node:fs");
+
+function versionAt(commit) {
+  let source;
+  try {
+    source = execFileSync("git", ["show", `${commit}:src/budget.js`], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch {
+    throw new Error("Cannot read the pushed or remote main version. Fetch the remote main branch and retry.");
+  }
+  const match = source.match(/^const APP_VERSION = "(\d+)\.(\d+)\.(\d+)";\r?$/m);
+  if (!match) throw new Error("APP_VERSION in src/budget.js must use major.minor.patch.");
+  return match.slice(1).map(Number);
+}
+
+try {
+  for (const line of readFileSync(0, "utf8").trim().split(/\r?\n/)) {
+    const [, localCommit, remoteRef, remoteCommit] = line.split(/\s+/);
+    if (remoteRef !== "refs/heads/main" || /^0+$/.test(localCommit) || localCommit === remoteCommit) continue;
+    const next = versionAt(localCommit);
+    if (/^0+$/.test(remoteCommit)) continue;
+    const previous = versionAt(remoteCommit);
+    const changed = next.findIndex((part, index) => part !== previous[index]);
+    if (changed < 0 || next[changed] < previous[changed]) {
+      throw new Error(`Before pushing to main, increase APP_VERSION above ${previous.join(".")}. Feature-branch commits do not need version bumps.`);
+    }
+  }
+} catch (error) {
+  console.error(error.message);
+  process.exitCode = 1;
+}

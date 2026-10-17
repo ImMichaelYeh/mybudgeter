@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">My Budget Planner</string>
-    <string name="update_webview">Update Android System WebView (or Chrome) from the Play Store, then reopen My Budget Planner. Your saved budget has not been changed.</string>
+    <string name="app_name">My Budget</string>
+    <string name="update_webview">Update Android System WebView (or Chrome) from the Play Store, then reopen My Budget. Your saved budget has not been changed.</string>
 </resources>
